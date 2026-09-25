@@ -53,14 +53,18 @@ jobs:
       - name: Install pinned dependencies
         run: uv pip sync --system requirements.lock.txt
 
-      - name: Lint
+      # Includes the cyclomatic complexity ceiling, rule C901, capped at 16 in
+      # pyproject.toml. Enforced here as well as in the pre-commit hook, because
+      # a local hook can be skipped with --no-verify and a rule that can be
+      # skipped is advice rather than a gate.
+      - name: Lint and complexity check
         run: ruff check .
 
       - name: Type check
         run: mypy
 
-      - name: Test
-        run: pytest
+      - name: Test with coverage
+        run: pytest --cov --cov-fail-under=85
 
   secrets:
     name: Secret scan

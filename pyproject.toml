@@ -36,7 +36,21 @@ exclude = [".venv", "__pycache__"]
 #   UP    pyupgrade, so syntax tracks the pinned interpreter
 #   B     bugbear, which catches the mutable-default and loop-variable-capture
 #         classes of bug that type checking does not
-select = ["E", "F", "I", "UP", "B"]
+#   C90   mccabe cyclomatic complexity, capped below
+select = ["E", "F", "I", "UP", "B", "C90"]
+
+[tool.ruff.lint.mccabe]
+# Cyclomatic complexity counts the independent paths through a function: every
+# if, elif, for, while, except, and boolean operator adds one. A function with a
+# high count has more states than a reader can hold at once and more paths than
+# a test suite realistically covers.
+#
+# 16 is the agreed ceiling. It is deliberately not the strictest setting: a
+# limit low enough to trip on legitimate code gets suppressed with noqa, and a
+# rule everyone silences is worse than no rule. Nothing in the codebase is above
+# 10 today, so this is headroom rather than a constraint, and the point is to
+# catch drift before it compounds.
+max-complexity = 16
 
 [tool.mypy]
 python_version = "3.13"
@@ -58,3 +72,27 @@ no_implicit_optional = true
 [[tool.mypy.overrides]]
 module = ["fakeredis.*"]
 ignore_missing_imports = true
+
+
+[tool.coverage.run]
+source = ["app"]
+branch = true
+
+[tool.coverage.report]
+# Branch coverage, not line coverage. A line executed once with a condition that
+# was never false is not really tested, and line coverage would report it as
+# covered.
+show_missing = true
+skip_covered = true
+
+# The floor, not the target. Coverage is 94 percent today, so this leaves room
+# for a change that adds an untested edge without blocking the commit, while
+# still catching a change that guts the suite. Raise it as the real figure
+# climbs; a threshold that sits far below reality stops meaning anything.
+fail_under = 85
+
+exclude_lines = [
+    "pragma: no cover",
+    "raise NotImplementedError",
+    "if TYPE_CHECKING:",
+]
