@@ -24,20 +24,25 @@
 #   locust                    load testing phase
 
 # gateway
-fastapi==0.118.0
-uvicorn[standard]==0.37.0
-pydantic==2.11.9
-pydantic-settings==2.11.0
+# NOTE: versions below are pinned to the latest releases that ship pre-built
+# cp314 wheels. The upstream lockfile used pydantic==2.11.9 / pydantic-core
+# ==2.33.2, which have no Python 3.14 wheel and fail to compile from source
+# (PyO3 0.24 caps at CPython 3.13). Bumped to 2.13.x which resolves to
+# pydantic-core 2.46.x that ships a cp314 wheel.
+fastapi==0.141.1
+uvicorn[standard]==0.54.0
+pydantic==2.13.5
+pydantic-settings==2.15.0
 
 # state
-redis==6.4.0
+redis==8.1.0
 
 # testing
-pytest==8.4.2
-pytest-asyncio==1.2.0
-fakeredis==2.31.3
+pytest==9.1.1
+pytest-asyncio==1.4.0
+fakeredis==2.38.0
 httpx==0.28.1
 
 # tooling
-ruff==0.14.0
-mypy==1.18.2
+ruff==0.16.8
+mypy==2.3.1

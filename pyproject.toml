@@ -25,7 +25,7 @@ markers = [
 ]
 
 [tool.ruff]
-target-version = "py313"
+target-version = "py314"
 line-length = 100
 exclude = [".venv", "__pycache__"]
 
@@ -39,7 +39,7 @@ exclude = [".venv", "__pycache__"]
 select = ["E", "F", "I", "UP", "B"]
 
 [tool.mypy]
-python_version = "3.13"
+python_version = "3.14"
 files = ["app"]
 
 # Every function in app/ carries a signature. This is the rule the skeleton
