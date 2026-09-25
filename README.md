@@ -229,20 +229,23 @@ Further out: adaptive per entry thresholds instead of one global constant, a rer
 
 ## Project status
 
-Work in progress. Planning is done and implementation hasn't started.
+Work in progress. The Tier 1 path works end to end against fakes: the same
+prompt sent twice is served from cache, with the provider called once. Tier 2,
+the rate limiter, the real provider adapters and the benchmark are not built.
 
 - [x] Product requirements, architecture, API contract and design decisions written up
 - [x] Repository scaffold: every module, test and config file in place, commented, no logic yet
 - [ ] Compose stack filled in
-- [ ] OpenAI compatible endpoint and schema validation
-- [ ] Tier 1 exact match cache
+- [x] OpenAI compatible endpoint and schema validation
+- [x] Tier 1 exact match cache, with the TTL preserved on a hit
 - [ ] Provider adapter, token counting and cost computation
 - [ ] Tier 2 semantic cache, embedding and threshold search
 - [ ] TTL and eviction across both tiers
 - [ ] Token bucket rate limiter with reservation and reconciliation
 - [ ] Benchmark harness and workload replay
 - [ ] RAGAS quality parity pipeline
-- [ ] Circuit breaker, Anthropic adapter and failover
+- [x] Circuit breaker
+- [ ] Anthropic adapter and failover
 - [ ] Adversarial false hit suite
 - [ ] OpenTelemetry spans and metrics endpoint
 
@@ -309,7 +312,26 @@ The gateway is the only service with a published port. Redis and ChromaDB stay o
 curl http://localhost:8000/health
 ```
 
-Note that nothing serves a real completion yet. The scaffold is files and comments, so `docker compose up` will not give you a working gateway until the modules are filled in.
+### Running it now, without Docker
+
+The gateway runs on the stub provider with no credentials and no network. Redis is the only thing it needs:
+
+```
+uv venv -p 3.13 .venv
+uv pip sync requirements.lock.txt
+.venv/bin/uvicorn app.main:app
+```
+
+Then, in another shell, send the same question twice with different spacing:
+
+```
+curl -s localhost:8000/v1/chat/completions -H 'Authorization: Bearer test' -H 'Content-Type: application/json' -d '{"model":"gpt-4o-mini","messages":[{"role":"user","content":"What is the capital of France?"}]}'
+curl -s localhost:8000/v1/chat/completions -H 'Authorization: Bearer test' -H 'Content-Type: application/json' -d '{"model":"gpt-4o-mini","messages":[{"role":"user","content":"  What is   the capital   of France?  "}]}'
+```
+
+The first reports `"semcache_status": "miss"`, the second `"exact_hit"` with identical content. That pair proves normalisation, hashing and the Tier 1 cache in one go.
+
+Tier 2, the token budget and provider failover are not wired yet, so `docker compose up` gives you the stack but not those behaviours.
 
 ## Environment variables
 
