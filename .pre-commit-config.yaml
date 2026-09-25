@@ -24,7 +24,7 @@ repos:
   # pipeline, or worse, pass the pipeline having been checked by weaker rules.
   # Bump both together, never one alone.
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.14.0
+    rev: v0.16.8
     hooks:
       - id: ruff
         name: lint and complexity check
