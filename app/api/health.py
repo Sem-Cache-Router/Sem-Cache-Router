@@ -13,6 +13,8 @@ from typing import Any
 
 from fastapi import APIRouter, Request
 
+from app.telemetry.metrics import Metrics
+
 router = APIRouter(tags=["health"])
 
 
@@ -50,3 +52,8 @@ async def health(request: Request) -> dict[str, Any]:
         "status": "ok" if healthy else "degraded",
         "dependencies": dependencies,
     }
+
+@router.get("/metrics")
+async def get_metrics() -> dict[str, Any]:
+    """Expose metrics snapshot for benchmarking and monitoring."""
+    return Metrics().snapshot()
