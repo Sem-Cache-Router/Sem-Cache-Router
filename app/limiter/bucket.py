@@ -41,7 +41,7 @@ class TokenBucket:
             redis.call("HSET", key, "tokens_remaining", new_val)
         end
         """
-        await self.redis.eval(release_script, 1, key, str(self.capacity), str(tokens)) # type: ignore
+        await self.redis.eval(release_script, 1, key, str(self.capacity), str(tokens))
 
     async def reconcile(self, api_key: str, window: str, estimate: int, actual: int) -> None:
         """Settle a reservation against reported usage."""

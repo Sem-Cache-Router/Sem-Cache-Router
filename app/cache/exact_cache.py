@@ -109,9 +109,9 @@ class ExactCache:
 
         # HINCRBY is atomic, so two concurrent hits cannot lose an increment,
         # and neither it nor HSET disturbs the key's remaining TTL.
-        hit_count = await _resolve(self._redis.hincrby(key, FIELD_HIT_COUNT, 1))
+        hit_count: int = await _resolve(self._redis.hincrby(key, FIELD_HIT_COUNT, 1))
         last_hit_at = datetime.now(UTC)
-        await _resolve(self._redis.hset(key, FIELD_LAST_HIT_AT, last_hit_at.isoformat()))
+        await _resolve(self._redis.hset(key, FIELD_LAST_HIT_AT, last_hit_at.isoformat())) # type: ignore[arg-type]
 
         entry.hit_count = int(hit_count)
         entry.last_hit_at = last_hit_at

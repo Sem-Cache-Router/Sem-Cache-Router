@@ -22,3 +22,5 @@ chroma_data/
 redis_data/
 benchmarks/output/
 *.log
+
+CONTEXT.md
