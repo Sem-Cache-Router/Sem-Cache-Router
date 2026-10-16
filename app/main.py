@@ -26,6 +26,7 @@ from app.errors import GatewayError, request_id
 from app.models import ErrorCode, ErrorDetail, ErrorResponse
 from app.providers.base import LLMProvider
 from app.providers.stub import StubProvider
+from app.telemetry.metrics import Metrics
 
 
 def build_provider(name: str, settings: Settings) -> LLMProvider:
@@ -77,6 +78,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # position of the check is fixed even though the implementation is not.
     if getattr(app.state, "limiter", None) is None:
         app.state.limiter = None
+
+    if getattr(app.state, "metrics", None) is None:
+        app.state.metrics = Metrics()
 
     try:
         yield

@@ -13,8 +13,6 @@ from typing import Any
 
 from fastapi import APIRouter, Request
 
-from app.telemetry.metrics import Metrics
-
 router = APIRouter(tags=["health"])
 
 
@@ -53,7 +51,13 @@ async def health(request: Request) -> dict[str, Any]:
         "dependencies": dependencies,
     }
 
+
 @router.get("/metrics")
-async def get_metrics() -> dict[str, Any]:
-    """Expose metrics snapshot for benchmarking and monitoring."""
-    return Metrics().snapshot()
+async def get_metrics(request: Request) -> dict[str, Any]:
+    """Expose aggregate counters and latency percentiles for benchmarking.
+
+    Reads from app.state.metrics rather than a process-global singleton, so
+    each test gets its own instance and counters never leak between cases.
+    """
+    return request.app.state.metrics.snapshot()
+

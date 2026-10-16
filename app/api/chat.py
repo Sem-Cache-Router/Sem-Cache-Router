@@ -74,6 +74,8 @@ async def create_chat_completion(
     state = request.app.state
     rid = request_id(request)
     response.headers["x-request-id"] = rid
+    metrics = state.metrics
+    start = time.monotonic()
 
     # Step 2. Authentication. Resolved once; the key is also the bucket
     # identity the limiter will charge against.
@@ -87,6 +89,7 @@ async def create_chat_completion(
         estimate = state.provider.estimate_tokens(payload.messages)
         reservation = await limiter.reserve(api_key, estimate)
         if reservation is None:
+            metrics.record_throttled()
             raise GatewayError(
                 ErrorCode.TOKEN_BUDGET_EXCEEDED,
                 "Token budget exhausted for this key.",
@@ -112,6 +115,8 @@ async def create_chat_completion(
         if limiter is not None and reservation is not None:
             # A hit spends no provider tokens, so the whole reservation returns.
             await limiter.release(reservation)
+        metrics.record_tier1_hit()
+        metrics.record_latency(time.monotonic() - start, hit=True)
         return _from_cached(cached.response_body, payload.model, CacheStatus.EXACT_HIT)
 
     # Step 5. Tier 2 semantic lookup lands here, between the exact miss and the
@@ -150,6 +155,9 @@ async def create_chat_completion(
     if limiter is not None and reservation is not None:
         await limiter.reconcile(reservation, provider_response.usage.total_tokens)
 
+    metrics.record_miss()
+    metrics.add_spend(provider_response.cost_usd)
+    metrics.record_latency(time.monotonic() - start, hit=False)
     return _from_cached(body, payload.model, CacheStatus.MISS)
 
 
