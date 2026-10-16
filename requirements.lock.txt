@@ -22,7 +22,7 @@ anyio==4.15.1
     #   httpx2
     #   starlette
     #   watchfiles
-ast-serialize==0.11.2
+ast-serialize==0.13.1
     # via mypy
 attrs==26.1.0
     # via
@@ -51,7 +51,7 @@ click==8.5.0
     #   uvicorn
 coverage==7.16.2
     # via pytest-cov
-distlib==0.4.3
+distlib==0.4.4
     # via virtualenv
 durationpy==0.11
     # via kubernetes
@@ -59,7 +59,7 @@ fakeredis==2.38.0
     # via -r requirements.txt
 fastapi==0.141.1
     # via -r requirements.txt
-filelock==4.0.12
+filelock==4.2.0
     # via
     #   huggingface-hub
     #   python-discovery
@@ -72,8 +72,10 @@ frozenlist==1.8.0
     #   aiosignal
 fsspec==2026.9.0
     # via huggingface-hub
-googleapis-common-protos==1.75.5
-    # via opentelemetry-exporter-otlp-proto-grpc
+googleapis-common-protos==1.75.0
+    # via
+    #   opentelemetry-exporter-otlp-proto-grpc
+    #   opentelemetry-exporter-otlp-proto-http
 grpcio==1.84.0
     # via
     #   chromadb
@@ -89,7 +91,7 @@ httpcore==1.0.9
     # via httpx
 httpcore2==2.13.1
     # via httpx2
-httptools==0.8.0
+httptools==0.9.0
     # via uvicorn
 httpx==0.28.1
     # via
@@ -108,9 +110,11 @@ idna==3.20
     #   httpx2
     #   requests
     #   yarl
+importlib-metadata==8.7.1
+    # via opentelemetry-api
 importlib-resources==7.1.0
     # via chromadb
-iniconfig==2.3.0
+iniconfig==2.3.1
     # via pytest
 jsonschema==4.26.0
     # via chromadb
@@ -118,7 +122,7 @@ jsonschema-specifications==2025.9.1
     # via jsonschema
 kubernetes==37.0.1
     # via chromadb
-librt==0.15.0
+librt==0.16.0
     # via mypy
 markdown-it-py==4.2.0
     # via rich
@@ -144,28 +148,34 @@ oauthlib==4.0.0
     # via requests-oauthlib
 onnxruntime==1.31.0
     # via chromadb
-opentelemetry-api==1.45.1
+opentelemetry-api==1.34.1
     # via
+    #   -r requirements.txt
     #   chromadb
     #   opentelemetry-exporter-otlp-proto-grpc
+    #   opentelemetry-exporter-otlp-proto-http
     #   opentelemetry-sdk
     #   opentelemetry-semantic-conventions
-opentelemetry-exporter-otlp-common==0.66b1
-    # via opentelemetry-exporter-otlp-proto-grpc
-opentelemetry-exporter-otlp-proto-common==1.45.1
-    # via opentelemetry-exporter-otlp-proto-grpc
-opentelemetry-exporter-otlp-proto-grpc==1.45.1
+opentelemetry-exporter-otlp-proto-common==1.34.1
+    # via
+    #   opentelemetry-exporter-otlp-proto-grpc
+    #   opentelemetry-exporter-otlp-proto-http
+opentelemetry-exporter-otlp-proto-grpc==1.34.1
     # via chromadb
-opentelemetry-proto==1.45.1
+opentelemetry-exporter-otlp-proto-http==1.34.1
+    # via -r requirements.txt
+opentelemetry-proto==1.34.1
     # via
     #   opentelemetry-exporter-otlp-proto-common
     #   opentelemetry-exporter-otlp-proto-grpc
-opentelemetry-sdk==1.45.1
+    #   opentelemetry-exporter-otlp-proto-http
+opentelemetry-sdk==1.34.1
     # via
+    #   -r requirements.txt
     #   chromadb
-    #   opentelemetry-exporter-otlp-common
     #   opentelemetry-exporter-otlp-proto-grpc
-opentelemetry-semantic-conventions==0.66b1
+    #   opentelemetry-exporter-otlp-proto-http
+opentelemetry-semantic-conventions==0.55b1
     # via opentelemetry-sdk
 orjson==3.13.0
     # via chromadb
@@ -180,9 +190,9 @@ packaging==26.3
     #   virtualenv
 pathspec==1.1.1
     # via mypy
-platformdirs==4.12.4
+platformdirs==4.13.3
     # via virtualenv
-pluggy==1.6.0
+pluggy==1.7.0
     # via
     #   pytest
     #   pytest-cov
@@ -192,7 +202,7 @@ propcache==0.5.4
     # via
     #   aiohttp
     #   yarl
-protobuf==7.36.2
+protobuf==5.29.6
     # via
     #   googleapis-common-protos
     #   onnxruntime
@@ -231,9 +241,9 @@ pytest-cov==7.0.0
     # via -r requirements.txt
 python-dateutil==2.9.0.post0
     # via kubernetes
-python-discovery==1.6.1
+python-discovery==1.6.3
     # via virtualenv
-python-dotenv==1.2.3
+python-dotenv==1.2.4
     # via
     #   pydantic-settings
     #   uvicorn
@@ -255,6 +265,7 @@ referencing==0.37.0
 requests==2.34.2
     # via
     #   kubernetes
+    #   opentelemetry-exporter-otlp-proto-http
     #   requests-oauthlib
 requests-oauthlib==2.0.0
     # via kubernetes
@@ -274,7 +285,7 @@ six==1.17.0
     # via python-dateutil
 sortedcontainers==2.4.0
     # via fakeredis
-starlette==0.48.0
+starlette==1.8.0
     # via fastapi
 tenacity==9.2.1
     # via chromadb
@@ -301,6 +312,7 @@ typing-extensions==4.16.0
     #   mypy
     #   opentelemetry-api
     #   opentelemetry-exporter-otlp-proto-grpc
+    #   opentelemetry-exporter-otlp-proto-http
     #   opentelemetry-sdk
     #   opentelemetry-semantic-conventions
     #   pydantic
@@ -319,15 +331,17 @@ uvicorn==0.54.0
     # via
     #   -r requirements.txt
     #   chromadb
-uvloop==0.22.1
+uvloop==0.23.0
     # via uvicorn
-virtualenv==21.14.5
+virtualenv==21.14.8
     # via pre-commit
 watchfiles==1.3.0
     # via uvicorn
 websocket-client==1.9.2
     # via kubernetes
-websockets==17.1
+websockets==17.2
     # via uvicorn
 yarl==1.25.1
     # via aiohttp
+zipp==4.1.1
+    # via importlib-metadata

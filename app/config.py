@@ -85,6 +85,13 @@ class Settings(BaseSettings):
     # connection attempt that is going to fail.
     chroma_reconnect_seconds: float = Field(default=30.0, gt=0)
 
+    # OpenTelemetry tracing. Disabled by default so the gateway starts with no
+    # collector present and no errors.  The endpoint is where the OTLP exporter
+    # sends spans; None means tracing is a no-op even if enabled, which is the
+    # safe behaviour when no collector is reachable.
+    tracing_enabled: bool = False
+    otel_exporter_endpoint: str | None = None
+
     # Observability. Prompt text is caller data, so it reaches the logs only
     # when this is switched on deliberately in a development configuration.
     log_prompts: bool = False
