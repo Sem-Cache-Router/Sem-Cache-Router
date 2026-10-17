@@ -256,7 +256,7 @@ the PRD.
 - [x] OpenAI and Anthropic adapters, built but not yet selectable at startup
 - [ ] Token bucket rate limiter wired into the route: built, but its interface does not yet match the route's calls
 - [ ] Breaker driven failover between providers
-- [ ] OpenTelemetry spans
+- [x] OpenTelemetry spans and a structured log line per request, prompts redacted by default
 - [ ] Benchmark harness and workload replay
 - [ ] RAGAS quality parity pipeline
 
