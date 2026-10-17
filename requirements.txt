@@ -20,7 +20,6 @@
 #                             APIs over httpx directly
 #   sentence-transformers     replaced by the ONNX runtime chromadb already
 #                             ships; see the state group below
-#   opentelemetry-*           observability phase
 #   ragas                     evaluation phase
 #   locust                    load testing phase
 
@@ -44,6 +43,17 @@ redis==8.1.0
 # torch and fifteen nvidia CUDA packages to embed one sentence on a CPU, so the
 # ONNX path is used instead and the deviation is recorded in the PRD.
 chromadb==1.5.9
+
+# observability: the tracing layer needs the API, the SDK for the tracer
+# provider and in-memory exporter (tests), and the OTLP/HTTP exporter for
+# sending spans to a collector. HTTP was chosen to keep grpcio out of the tree,
+# but chromadb now depends on the gRPC exporter and brings grpcio regardless,
+# so that reason no longer holds. HTTP stays because it works through ordinary
+# proxies and needs no channel management. Pinning 1.34.1 also holds protobuf
+# at 5.x across the tree, chromadb included; the semantic cache tests pass on it.
+opentelemetry-api==1.34.1
+opentelemetry-sdk==1.34.1
+opentelemetry-exporter-otlp-proto-http==1.34.1
 
 # testing
 pytest==9.1.1

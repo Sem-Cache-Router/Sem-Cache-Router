@@ -75,3 +75,31 @@ def test_reconnect_cooldown_must_be_positive() -> None:
     """A zero cooldown would retry a dead Chroma on every request."""
     with pytest.raises(ValidationError):
         settings(chroma_reconnect_seconds=0)
+
+
+@pytest.mark.parametrize(
+    ("given", "expected"),
+    [
+        ("http://collector:4318", "http://collector:4318/v1/traces"),
+        ("http://collector:4318/", "http://collector:4318/v1/traces"),
+        ("http://collector:4318/v1/traces", "http://collector:4318/v1/traces"),
+        ("https://otel.example.com/custom/path", "https://otel.example.com/custom/path"),
+    ],
+)
+def test_a_bare_collector_address_is_pointed_at_the_traces_path(given: str, expected: str) -> None:
+    """The exporter posts to a code-supplied endpoint verbatim, so a bare address
+    would send every span to the root and lose them all silently. An explicit
+    path is left exactly as given."""
+    assert settings(otel_exporter_endpoint=given).otel_exporter_endpoint == expected
+
+
+def test_tracing_has_no_endpoint_by_default() -> None:
+    """Nothing is exported unless someone configures where to."""
+    assert settings().otel_exporter_endpoint is None
+
+
+@pytest.mark.parametrize("url", ["collector:4318", "grpc://collector:4317", "not a url"])
+def test_an_unusable_otel_endpoint_is_rejected_at_startup(url: str) -> None:
+    """A typo should fail when the process starts, not as spans that never arrive."""
+    with pytest.raises(ValidationError):
+        settings(otel_exporter_endpoint=url)

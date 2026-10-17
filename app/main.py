@@ -31,6 +31,7 @@ from app.models import ErrorCode, ErrorDetail, ErrorResponse
 from app.providers.base import LLMProvider
 from app.providers.stub import StubProvider
 from app.telemetry.metrics import Metrics
+from app.telemetry.tracing import install_tracing
 
 
 def build_provider(name: str, settings: Settings) -> LLMProvider:
@@ -139,9 +140,22 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             await build_semantic_cache(settings) if settings.semantic_cache_enabled else None
         )
 
+    # Tracing. install_tracing returns None when tracing is disabled, which
+    # is the default, so the gateway starts with no collector and no errors.
+    owns_tracing = False
+    if getattr(app.state, "tracer_provider", None) is None:
+        provider = install_tracing(
+            endpoint=settings.otel_exporter_endpoint,
+            enabled=settings.tracing_enabled,
+        )
+        app.state.tracer_provider = provider
+        owns_tracing = provider is not None
+
     try:
         yield
     finally:
+        if owns_tracing and app.state.tracer_provider is not None:
+            app.state.tracer_provider.shutdown()
         if owns_redis:
             await app.state.redis.aclose()
 
