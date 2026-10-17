@@ -8,7 +8,11 @@
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
+import math
+import os
+import uuid
+from collections.abc import AsyncIterator, Callable
+from typing import Any
 
 import pytest
 import pytest_asyncio
@@ -19,6 +23,26 @@ from app.cache.exact_cache import ExactCache
 from app.config import Settings, get_settings
 from app.main import create_app
 from app.providers.stub import StubProvider
+
+MODEL_TESTS_ENV = "SEMCACHE_RUN_MODEL_TESTS"
+
+
+def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
+    """Skip tests that need the real embedding weights unless explicitly asked for.
+
+    The weights are a 79 MB download on first use, and the suite promises to need
+    no network. A default of -m "not model" in addopts would not hold that
+    promise, because any later -m on the command line replaces it, and the
+    pre-commit hook passes its own. Gating here holds regardless of -m.
+
+    Run them with SEMCACHE_RUN_MODEL_TESTS=1 pytest -m model.
+    """
+    if os.environ.get(MODEL_TESTS_ENV):
+        return
+    skip = pytest.mark.skip(reason=f"needs the real embedding model; set {MODEL_TESTS_ENV}=1")
+    for item in items:
+        if "model" in item.keywords:
+            item.add_marker(skip)
 
 
 @pytest.fixture
@@ -100,3 +124,99 @@ async def client(
 
     with TestClient(app) as test_client:
         yield test_client
+
+
+# --- Tier 2 ----------------------------------------------------------------
+
+TEST_DIMENSION = 8
+
+
+def unit_vector_at(cosine: float) -> list[float]:
+    """A unit vector whose cosine similarity with base_vector() is exactly `cosine`.
+
+    Real embeddings cannot be steered to a chosen similarity, so the semantic
+    cache tests build their vectors by hand. That is what lets a test assert
+    behaviour at 0.95 and 0.85 against a threshold of 0.90.
+    """
+    vector = [0.0] * TEST_DIMENSION
+    vector[0] = cosine
+    vector[1] = math.sqrt(max(0.0, 1.0 - cosine * cosine))
+    return vector
+
+
+def base_vector() -> list[float]:
+    """The reference vector every unit_vector_at() is measured against."""
+    return unit_vector_at(1.0)
+
+
+class MappingEmbedder:
+    """An embedder whose vectors are chosen by the test, text by text.
+
+    Text nobody registered gets a vector orthogonal to base_vector(), so it can
+    never accidentally clear a threshold.
+    """
+
+    dimension = TEST_DIMENSION
+
+    def __init__(self) -> None:
+        self._vectors: dict[str, list[float]] = {}
+        self.calls: list[str] = []
+
+    def register(self, text: str, vector: list[float]) -> None:
+        """Fix the vector a given prompt text embeds to."""
+        self._vectors[text] = vector
+
+    async def encode(self, text: str) -> list[float]:
+        """Return the registered vector, or one orthogonal to the base."""
+        self.calls.append(text)
+        unrelated = [0.0] * TEST_DIMENSION
+        unrelated[2] = 1.0
+        return self._vectors.get(text, unrelated)
+
+
+class FakeClock:
+    """A clock a test can move forward, for expiry without sleeping."""
+
+    def __init__(self, start: float = 1_000_000.0) -> None:
+        self.now = start
+
+    def __call__(self) -> float:
+        return self.now
+
+    def advance(self, seconds: float) -> None:
+        self.now += seconds
+
+
+@pytest.fixture
+def mapping_embedder() -> MappingEmbedder:
+    """An embedder with test-chosen vectors."""
+    return MappingEmbedder()
+
+
+@pytest.fixture
+def fake_clock() -> FakeClock:
+    """A controllable clock."""
+    return FakeClock()
+
+
+@pytest.fixture
+def chroma_factory() -> Callable[[], Any]:
+    """Build an in-memory Chroma client, with telemetry off so nothing leaves the machine."""
+    import chromadb
+    from chromadb.config import Settings as ChromaSettings
+
+    def factory() -> Any:
+        return chromadb.EphemeralClient(settings=ChromaSettings(anonymized_telemetry=False))
+
+    return factory
+
+
+@pytest.fixture
+def collection_name() -> str:
+    """A collection name unique to this test.
+
+    In-memory Chroma clients in one process share their state, so a fixed name
+    would let one test read entries another test wrote, and failures would
+    depend on the order tests ran in.
+    """
+    return f"test-{uuid.uuid4().hex}"

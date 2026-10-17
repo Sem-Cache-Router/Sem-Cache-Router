@@ -12,15 +12,19 @@
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
+import asyncio
+from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
+from typing import Any
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
 from app.api import chat, health
+from app.cache.embedder import OnnxEmbedder
 from app.cache.exact_cache import ExactCache
+from app.cache.semantic_cache import SemanticCache
 from app.config import Settings, get_settings
 from app.errors import GatewayError, request_id
 from app.models import ErrorCode, ErrorDetail, ErrorResponse
@@ -41,6 +45,51 @@ def build_provider(name: str, settings: Settings) -> LLMProvider:
     raise ValueError(
         f"provider {name!r} is configured but not implemented yet; "
         "set SEMCACHE_PRIMARY_PROVIDER=stub"
+    )
+
+
+def chroma_client_factory(settings: Settings) -> Callable[[], Any]:
+    """Return a function that builds a Chroma client from settings.
+
+    A factory, not a client: the Chroma client raises at construction when the
+    server is down, so building it here would stop the gateway starting during
+    a vector store outage. The semantic cache calls this when it first needs a
+    connection, and again after each reconnect cooldown.
+    """
+    host, port, ssl = settings.chroma_endpoint
+
+    def factory() -> Any:
+        import chromadb
+        from chromadb.config import Settings as ChromaSettings
+
+        return chromadb.HttpClient(
+            host=host,
+            port=port,
+            ssl=ssl,
+            settings=ChromaSettings(anonymized_telemetry=False),
+        )
+
+    return factory
+
+
+async def build_semantic_cache(settings: Settings) -> SemanticCache:
+    """Load the embedder and build the Tier 2 cache.
+
+    The embedder is loaded here, off the event loop, so no request pays for it.
+    A failure to load it stops startup, deliberately, and that is the opposite
+    of how a Chroma outage is handled. The weights are baked into the image, so
+    failing to load them is a broken deployment that should be loud. Chroma is
+    a remote service whose outages are transient, so losing it degrades instead.
+    """
+    embedder = OnnxEmbedder(settings.embedding_model)
+    await asyncio.to_thread(embedder.load)
+    return SemanticCache(
+        chroma_client_factory(settings),
+        embedder,
+        collection_name=settings.chroma_collection,
+        ttl_seconds=settings.cache_ttl_seconds,
+        threshold=settings.similarity_threshold,
+        reconnect_seconds=settings.chroma_reconnect_seconds,
     )
 
 
@@ -82,6 +131,14 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     if getattr(app.state, "metrics", None) is None:
         app.state.metrics = Metrics()
+
+    # Tier 2. None when switched off, and the route guards on it, the same
+    # pattern as the limiter, so the position of the lookup in the pipeline is
+    # fixed whether or not a vector store is configured.
+    if getattr(app.state, "semantic_cache", None) is None:
+        app.state.semantic_cache = (
+            await build_semantic_cache(settings) if settings.semantic_cache_enabled else None
+        )
 
     # Tracing. install_tracing returns None when tracing is disabled, which
     # is the default, so the gateway starts with no collector and no errors.

@@ -16,9 +16,10 @@
 #   tiktoken                  the limiter is not built, and tiktoken downloads
 #                             BPE files from the network on first use, which
 #                             would make CI flaky
-#   openai, anthropic         no real provider adapters yet
-#   chromadb,                 Tier 2
-#   sentence-transformers
+#   openai, anthropic         not needed: the adapters speak to the provider
+#                             APIs over httpx directly
+#   sentence-transformers     replaced by the ONNX runtime chromadb already
+#                             ships; see the state group below
 #   ragas                     evaluation phase
 #   locust                    load testing phase
 
@@ -36,10 +37,20 @@ pydantic-settings==2.15.0
 # state
 redis==8.1.0
 
-# observability — the tracing layer needs the API, the SDK for the tracer
+# Tier 2 vector store and embedding runtime. chromadb brings onnxruntime and
+# tokenizers with it, which is enough to run all-MiniLM-L6-v2, the model the
+# PRD specifies. sentence-transformers would run the same model but pulls in
+# torch and fifteen nvidia CUDA packages to embed one sentence on a CPU, so the
+# ONNX path is used instead and the deviation is recorded in the PRD.
+chromadb==1.5.9
+
+# observability: the tracing layer needs the API, the SDK for the tracer
 # provider and in-memory exporter (tests), and the OTLP/HTTP exporter for
-# sending spans to a collector. HTTP rather than gRPC to avoid pulling in
-# grpcio, which is heavy and sometimes fails to build on Python 3.14.
+# sending spans to a collector. HTTP was chosen to keep grpcio out of the tree,
+# but chromadb now depends on the gRPC exporter and brings grpcio regardless,
+# so that reason no longer holds. HTTP stays because it works through ordinary
+# proxies and needs no channel management. Pinning 1.34.1 also holds protobuf
+# at 5.x across the tree, chromadb included; the semantic cache tests pass on it.
 opentelemetry-api==1.34.1
 opentelemetry-sdk==1.34.1
 opentelemetry-exporter-otlp-proto-http==1.34.1

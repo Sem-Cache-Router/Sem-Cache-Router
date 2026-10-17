@@ -16,35 +16,49 @@ from fastapi import APIRouter, Request
 router = APIRouter(tags=["health"])
 
 
+async def _redis_state(request: Request) -> str:
+    """ok, unreachable, or not_configured."""
+    redis = getattr(request.app.state, "redis", None)
+    if redis is None:
+        return "not_configured"
+    try:
+        await redis.ping()
+    except Exception:
+        # Deliberately broad. Any failure to reach Redis is the same fact to an
+        # operator, and narrowing it would mean importing and tracking every
+        # exception the client might raise.
+        return "unreachable"
+    return "ok"
+
+
+async def _chroma_state(request: Request) -> str:
+    """ok, unreachable, or disabled when Tier 2 is switched off.
+
+    A real round trip through the semantic cache, not a cached belief, since a
+    vector store can vanish after the gateway connected to it. is_available
+    never raises, so neither does this.
+    """
+    semantic_cache = getattr(request.app.state, "semantic_cache", None)
+    if semantic_cache is None:
+        return "disabled"
+    return "ok" if await semantic_cache.is_available() else "unreachable"
+
+
 @router.get("/health")
 async def health(request: Request) -> dict[str, Any]:
     """Report liveness plus whether each dependency can be reached.
 
-    Status is "ok" only when nothing required is missing. Redis is required,
-    because admission cannot be decided without it, so an unreachable Redis is
-    reported as degraded rather than glossed over.
+    Status is "ok" only when every configured dependency answers. Losing Redis
+    and losing Chroma both report "degraded", and the dependencies map says
+    which: an unreachable Redis means requests fail, while an unreachable Chroma
+    means they are served from Tier 1 alone. The distinction lives in the map
+    because a single word cannot carry it.
     """
-    dependencies: dict[str, str] = {}
-
-    redis = getattr(request.app.state, "redis", None)
-    if redis is None:
-        dependencies["redis"] = "not_configured"
-    else:
-        try:
-            await redis.ping()
-            dependencies["redis"] = "ok"
-        except Exception:
-            # Deliberately broad. Any failure to reach Redis is the same fact to
-            # an operator, and narrowing it would mean importing and tracking
-            # every exception the client might raise.
-            dependencies["redis"] = "unreachable"
-
-    # Tier 2 is not built. Reported honestly as absent rather than stubbed as
-    # healthy, because a health endpoint that lies about a dependency it never
-    # checked is worse than one that admits the gap.
-    dependencies["chroma"] = "not_configured"
-
-    healthy = dependencies["redis"] == "ok"
+    dependencies = {
+        "redis": await _redis_state(request),
+        "chroma": await _chroma_state(request),
+    }
+    healthy = dependencies["redis"] == "ok" and dependencies["chroma"] in ("ok", "disabled")
 
     return {
         "status": "ok" if healthy else "degraded",
@@ -60,4 +74,3 @@ async def get_metrics(request: Request) -> dict[str, Any]:
     each test gets its own instance and counters never leak between cases.
     """
     return request.app.state.metrics.snapshot()
-
