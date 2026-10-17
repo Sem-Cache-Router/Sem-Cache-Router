@@ -8,6 +8,7 @@
 
 from __future__ import annotations
 
+import os
 from collections.abc import AsyncIterator
 
 import pytest
@@ -19,6 +20,26 @@ from app.cache.exact_cache import ExactCache
 from app.config import Settings, get_settings
 from app.main import create_app
 from app.providers.stub import StubProvider
+
+MODEL_TESTS_ENV = "SEMCACHE_RUN_MODEL_TESTS"
+
+
+def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
+    """Skip tests that need the real embedding weights unless explicitly asked for.
+
+    The weights are a 79 MB download on first use, and the suite promises to need
+    no network. A default of -m "not model" in addopts would not hold that
+    promise, because any later -m on the command line replaces it, and the
+    pre-commit hook passes its own. Gating here holds regardless of -m.
+
+    Run them with SEMCACHE_RUN_MODEL_TESTS=1 pytest -m model.
+    """
+    if os.environ.get(MODEL_TESTS_ENV):
+        return
+    skip = pytest.mark.skip(reason=f"needs the real embedding model; set {MODEL_TESTS_ENV}=1")
+    for item in items:
+        if "model" in item.keywords:
+            item.add_marker(skip)
 
 
 @pytest.fixture
