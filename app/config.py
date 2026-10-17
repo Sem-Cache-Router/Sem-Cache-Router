@@ -33,9 +33,11 @@ class Settings(BaseSettings):
 
     # State stores. Defaults point at localhost for a developer running the
     # gateway outside Compose; the Compose file overrides both with service
-    # names on the internal network.
+    # names on the internal network. Chroma's own default port is 8000, which
+    # the gateway already holds when both run on one machine, so a local Chroma
+    # is expected on 8001.
     redis_url: str = "redis://localhost:6379/0"
-    chroma_host: str = "http://localhost:8000"
+    chroma_host: str = "http://localhost:8001"
 
     # Cache behaviour. The threshold is bounded because a value outside [0, 1]
     # is not a cosine similarity, and catching that at startup is cheaper than
