@@ -11,8 +11,9 @@ from __future__ import annotations
 
 from functools import lru_cache
 from typing import Literal
+from urllib.parse import urlsplit
 
-from pydantic import AliasChoices, Field
+from pydantic import AliasChoices, Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 ProviderName = Literal["stub", "openai", "anthropic"]
@@ -63,6 +64,27 @@ class Settings(BaseSettings):
     # Embedding.
     embedding_model: str = "all-MiniLM-L6-v2"
 
+    # Tier 2. Off by default, so the gateway still starts and serves when no
+    # vector store is running, which is the situation for the test suite and
+    # for anyone running it locally on the stub provider. Compose turns it on.
+    semantic_cache_enabled: bool = False
+
+    # The collection carries a schema version for the same reason Tier 1 keys
+    # do: if the stored shape changes, a new name orphans the old entries rather
+    # than requiring a migration. Chroma rejects names outside this pattern, so
+    # it is checked at startup instead of on the first write.
+    chroma_collection: str = Field(
+        default="semcache-v1",
+        min_length=3,
+        max_length=512,
+        pattern=r"^[A-Za-z0-9][A-Za-z0-9._-]*[A-Za-z0-9]$",
+    )
+
+    # How long to wait before trying Chroma again after a failed connection.
+    # Without a cooldown, every request during an outage would pay for a
+    # connection attempt that is going to fail.
+    chroma_reconnect_seconds: float = Field(default=30.0, gt=0)
+
     # Observability. Prompt text is caller data, so it reaches the logs only
     # when this is switched on deliberately in a development configuration.
     log_prompts: bool = False
@@ -85,6 +107,33 @@ class Settings(BaseSettings):
         default=None,
         validation_alias=AliasChoices("ANTHROPIC_API_KEY", "SEMCACHE_ANTHROPIC_API_KEY"),
     )
+
+
+    @field_validator("chroma_host")
+    @classmethod
+    def _chroma_host_is_a_url(cls, value: str) -> str:
+        """Reject a Chroma address that cannot be split into host and port.
+
+        Checked here so a typo fails at startup with a clear message, rather
+        than as a connection error on the first Tier 2 lookup.
+        """
+        parsed = urlsplit(value)
+        if parsed.scheme not in ("http", "https") or not parsed.hostname:
+            raise ValueError("chroma_host must be an http or https URL, such as http://chromadb:8000")
+        return value
+
+    @property
+    def chroma_endpoint(self) -> tuple[str, int, bool]:
+        """Return the Chroma host, port and whether to use TLS.
+
+        One URL setting, like redis_url, rather than three separate fields, so the
+        Compose file overrides a single value. The Chroma client wants the parts,
+        so they are derived here and nowhere else.
+        """
+        parsed = urlsplit(self.chroma_host)
+        ssl = parsed.scheme == "https"
+        port = parsed.port or (443 if ssl else 80)
+        return str(parsed.hostname), port, ssl
 
 
 @lru_cache(maxsize=1)
