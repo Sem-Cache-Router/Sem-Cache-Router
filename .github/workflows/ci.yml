@@ -43,10 +43,14 @@ jobs:
         with:
           enable-cache: true
 
+      # Must match the interpreter the lockfile is compiled for. The lock is
+      # resolved for 3.14, and installing it on a different minor version only
+      # works for as long as every pinned package happens to ship wheels for
+      # both, which is luck rather than a guarantee.
       - name: Set up Python
         uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
-          python-version: "3.13"
+          python-version: "3.14"
 
       # The lockfile, not requirements.txt. Direct pins alone do not make a run
       # reproducible, and reproducibility is what the benchmark numbers rest on.
