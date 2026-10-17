@@ -229,13 +229,43 @@ def test_health_reports_an_unreachable_redis(client: TestClient) -> None:
     assert response.json()["dependencies"]["redis"] == "unreachable"
 
 
-def test_health_does_not_claim_chroma_is_healthy(client: TestClient) -> None:
-    """Tier 2 is not built, and the endpoint says so rather than stubbing ok.
+def test_health_reports_tier_two_as_disabled_when_switched_off(client: TestClient) -> None:
+    """Off is reported as off, not as healthy, and does not count as degraded."""
+    payload = client.get("/health").json()
+    assert payload["dependencies"]["chroma"] == "disabled"
+    assert payload["status"] == "ok"
 
-    A health endpoint that reports a dependency it never checked as healthy is
-    worse than one that admits the gap.
+
+class _FixedAvailability:
+    """A semantic cache stand in whose availability the test sets."""
+
+    def __init__(self, available: bool) -> None:
+        self.available = available
+
+    async def is_available(self) -> bool:
+        return self.available
+
+
+def test_health_reports_a_reachable_chroma(client: TestClient) -> None:
+    """Tier 2 on and answering is a healthy gateway."""
+    client.app.state.semantic_cache = _FixedAvailability(True)  # type: ignore[attr-defined]
+    payload = client.get("/health").json()
+    assert payload["dependencies"]["chroma"] == "ok"
+    assert payload["status"] == "ok"
+
+
+def test_health_reports_an_unreachable_chroma_as_degraded(client: TestClient) -> None:
+    """The gateway still serves, from Tier 1 alone, and says so.
+
+    Degraded rather than ok, because hit rate has dropped, and the dependency
+    map is what tells an operator it is Chroma rather than Redis.
     """
-    assert client.get("/health").json()["dependencies"]["chroma"] == "not_configured"
+    client.app.state.semantic_cache = _FixedAvailability(False)  # type: ignore[attr-defined]
+    response = client.get("/health")
+    assert response.status_code == 200
+    assert response.json()["dependencies"]["chroma"] == "unreachable"
+    assert response.json()["dependencies"]["redis"] == "ok"
+    assert response.json()["status"] == "degraded"
 
 
 @pytest.mark.parametrize("path", ["/health", "/v1/chat/completions"])
