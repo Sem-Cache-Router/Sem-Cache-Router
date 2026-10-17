@@ -129,6 +129,29 @@ class Settings(BaseSettings):
             raise ValueError("chroma_host must be an http or https URL, such as http://chromadb:8000")
         return value
 
+    @field_validator("otel_exporter_endpoint")
+    @classmethod
+    def _otel_endpoint_reaches_the_traces_path(cls, value: str | None) -> str | None:
+        """Require an http URL, and point a bare collector address at /v1/traces.
+
+        The OTLP/HTTP exporter posts to an endpoint passed in code exactly as
+        given; only the environment variable form gets /v1/traces appended. So
+        the usual collector address, http://collector:4318, would send every
+        span to the root, where the collector rejects it, and tracing would fail
+        with nothing visible. A path is added only when none was given, so an
+        explicit one is never second guessed.
+        """
+        if value is None:
+            return None
+        parsed = urlsplit(value)
+        if parsed.scheme not in ("http", "https") or not parsed.hostname:
+            raise ValueError(
+                "otel_exporter_endpoint must be an http or https URL, such as http://collector:4318"
+            )
+        if parsed.path in ("", "/"):
+            return value.rstrip("/") + "/v1/traces"
+        return value
+
     @property
     def chroma_endpoint(self) -> tuple[str, int, bool]:
         """Return the Chroma host, port and whether to use TLS.
