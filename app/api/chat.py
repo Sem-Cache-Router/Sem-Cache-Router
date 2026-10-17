@@ -48,6 +48,8 @@ from app.models import (
     Usage,
 )
 from app.providers.base import ProviderError
+from app.telemetry.request_record import RequestOutcome, breaker_state_of, record_request
+from app.telemetry.tracing import request_span
 
 router = APIRouter(tags=["chat"])
 
@@ -82,12 +84,53 @@ async def create_chat_completion(
     request: Request,
     response: Response,
 ) -> ChatCompletionResponse:
-    """Serve a completion from cache or a provider, enforcing the budget first."""
+    """Serve a completion from cache or a provider, enforcing the budget first.
+
+    Opens one span for the request and records what happened on it and in the
+    log, whatever the outcome, failures included. The work itself is in
+    _serve, which fills in the outcome as it reaches each exit.
+    """
     state = request.app.state
     rid = request_id(request)
     response.headers["x-request-id"] = rid
-    metrics = state.metrics
+    outcome = RequestOutcome(
+        request_id=rid,
+        provider=state.provider.name,
+        model=payload.model,
+        breaker_state=breaker_state_of(state),
+    )
     start = time.monotonic()
+    tracer_provider = getattr(state, "tracer_provider", None)
+
+    # Span named "{operation} {model}", as the gen_ai conventions specify.
+    with request_span(f"chat {payload.model}", provider=tracer_provider) as span:
+        try:
+            return await _serve(payload, request, outcome, start)
+        except GatewayError as exc:
+            outcome.error_code = exc.code.value
+            raise
+        except Exception:
+            outcome.error_code = "UNHANDLED"
+            raise
+        finally:
+            outcome.latency_ms = round((time.monotonic() - start) * 1000, 3)
+            record_request(
+                span,
+                outcome,
+                messages=payload.messages,
+                log_prompts=state.settings.log_prompts,
+            )
+
+
+async def _serve(
+    payload: ChatCompletionRequest,
+    request: Request,
+    outcome: RequestOutcome,
+    start: float,
+) -> ChatCompletionResponse:
+    """The request pipeline, steps 2 to 8, recording its outcome as it exits."""
+    state = request.app.state
+    metrics = state.metrics
 
     # Step 2. Authentication. Resolved once; the key is also the bucket
     # identity the limiter will charge against.
@@ -127,6 +170,7 @@ async def create_chat_completion(
         await _release_for_hit(limiter, reservation)
         metrics.record_tier1_hit()
         metrics.record_latency(time.monotonic() - start, hit=True)
+        outcome.cache_status = CacheStatus.EXACT_HIT.value
         return _from_cached(cached.response_body, payload.model, CacheStatus.EXACT_HIT)
 
     # Step 5. Tier 2, only after an exact miss, since embedding is the
@@ -136,6 +180,8 @@ async def create_chat_completion(
         await _release_for_hit(limiter, reservation)
         metrics.record_tier2_hit()
         metrics.record_latency(time.monotonic() - start, hit=True)
+        outcome.cache_status = CacheStatus.SEMANTIC_HIT.value
+        outcome.similarity = semantic.similarity
         return _from_cached(
             semantic.response_body,
             payload.model,
@@ -181,6 +227,10 @@ async def create_chat_completion(
     metrics.record_miss()
     metrics.add_spend(provider_response.cost_usd)
     metrics.record_latency(time.monotonic() - start, hit=False)
+    outcome.cache_status = CacheStatus.MISS.value
+    outcome.input_tokens = provider_response.usage.prompt_tokens
+    outcome.output_tokens = provider_response.usage.completion_tokens
+    outcome.cost_usd = provider_response.cost_usd
     return _from_cached(body, payload.model, CacheStatus.MISS)
 
 
