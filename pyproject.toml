@@ -22,6 +22,7 @@ addopts = "-q --strict-markers"
 
 markers = [
     "slow: tests that sleep for real time, deselect with -m 'not slow'",
+    "model: tests that load the real embedding weights, skipped unless SEMCACHE_RUN_MODEL_TESTS is set",
 ]
 
 [tool.ruff]
