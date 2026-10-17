@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -43,6 +44,13 @@ from app.models import Message
 # collection is created; under the default, 1 minus distance is not a
 # similarity at all and every threshold comparison would be silently wrong.
 COSINE_SPACE = {"hnsw:space": "cosine"}
+
+log = logging.getLogger(__name__)
+
+# Returned by _call when Chroma could not be used. A sentinel rather than None,
+# because several Chroma methods legitimately return None on success, delete
+# and upsert among them, so None cannot also mean failure.
+UNAVAILABLE: Any = object()
 
 ClientFactory = Callable[[], Any]
 
@@ -90,6 +98,7 @@ class SemanticCache:
         collection_name: str,
         ttl_seconds: int,
         threshold: float,
+        reconnect_seconds: float = 30.0,
         clock: Callable[[], float] = time.time,
     ) -> None:
         """Hold what the cache needs; connect to nothing yet.
@@ -97,23 +106,69 @@ class SemanticCache:
         Takes a factory rather than a client because the Chroma client raises
         at construction when the server is down. Building it here would turn a
         vector store outage into a gateway that will not start.
+
+        After a failure the cache stays unavailable for reconnect_seconds before
+        trying again. Without that, every request during an outage would pay for
+        a connection attempt that is going to fail.
         """
         self._client_factory = client_factory
         self._embedder = embedder
         self._collection_name = collection_name
         self._ttl_seconds = ttl_seconds
         self._threshold = threshold
+        self._reconnect_seconds = reconnect_seconds
         self._clock = clock
         self._collection: Any = None
+        self._unavailable_until = 0.0
 
     def _get_collection(self) -> Any:
-        """Connect on first use and fetch the collection in cosine space."""
-        if self._collection is None:
+        """Connect on first use and fetch the collection in cosine space.
+
+        Returns None while a previous failure's cooldown is running, and starts
+        a new cooldown if connecting fails now. Never raises: losing the vector
+        store should cost hit rate, not availability.
+        """
+        if self._collection is not None:
+            return self._collection
+        if self._clock() < self._unavailable_until:
+            return None
+        try:
             client = self._client_factory()
             self._collection = client.get_or_create_collection(
                 self._collection_name, metadata=COSINE_SPACE
             )
+        except Exception:
+            self._mark_unavailable("connect")
+            return None
         return self._collection
+
+    def _mark_unavailable(self, operation: str) -> None:
+        """Drop the connection and wait out the cooldown before trying again.
+
+        Logged rather than raised, so the request carries on with Tier 1 only.
+        The connection is dropped so the next attempt after the cooldown starts
+        clean instead of reusing a client whose server has gone away.
+        """
+        log.warning("semantic cache unavailable during %s; serving Tier 1 only", operation,
+                    exc_info=True)
+        self._collection = None
+        self._unavailable_until = self._clock() + self._reconnect_seconds
+
+    async def _call(self, operation: str, *args: Any, **kwargs: Any) -> Any:
+        """Run one collection method off the event loop, degrading on any failure.
+
+        Returns UNAVAILABLE when Chroma cannot be reached or the call fails,
+        after marking the cache unavailable. Every Chroma call goes through
+        here, so there is one place that decides what an outage means.
+        """
+        collection = await asyncio.to_thread(self._get_collection)
+        if collection is None:
+            return UNAVAILABLE
+        try:
+            return await asyncio.to_thread(getattr(collection, operation), *args, **kwargs)
+        except Exception:
+            self._mark_unavailable(operation)
+            return UNAVAILABLE
 
     async def add(
         self,
@@ -137,9 +192,8 @@ class SemanticCache:
             "expires_at": now + self._ttl_seconds,
             "response_body": json.dumps(response_body),
         }
-        collection = await asyncio.to_thread(self._get_collection)
-        await asyncio.to_thread(
-            collection.upsert,
+        await self._call(
+            "upsert",
             ids=[entry_id],
             embeddings=[vector],
             documents=[text],
@@ -154,15 +208,41 @@ class SemanticCache:
         same prompt against a different model is a different answer.
         """
         vector = await self._embedder.encode(prompt_text(messages))
-        collection = await asyncio.to_thread(self._get_collection)
-        result = await asyncio.to_thread(
-            collection.query,
+        result = await self._call(
+            "query",
             query_embeddings=[vector],
             n_results=1,
             where={"$and": [{"model": model}, {"expires_at": {"$gt": self._clock()}}]},
             include=["metadatas", "distances"],
         )
+        if result is UNAVAILABLE:
+            return None
         return self._best_hit(result)
+
+    async def is_available(self) -> bool:
+        """Report whether Chroma can be reached right now.
+
+        Makes a real round trip rather than trusting a cached connection, since
+        a server can disappear after the client was built. The health endpoint
+        uses this to tell a degraded gateway from a healthy one.
+        """
+        return await self._call("count") is not UNAVAILABLE
+
+    async def evict_expired(self) -> int:
+        """Delete entries past their expiry and return how many went.
+
+        Housekeeping only. Expiry is already enforced in every query, so an
+        expired entry is never served whether or not this has run; this just
+        stops the collection growing without bound.
+        """
+        expired = await self._call(
+            "get", where={"expires_at": {"$lte": self._clock()}}, include=[]
+        )
+        if expired is UNAVAILABLE or not expired["ids"]:
+            return 0
+        if await self._call("delete", ids=expired["ids"]) is UNAVAILABLE:
+            return 0
+        return len(expired["ids"])
 
     def _best_hit(self, result: Any) -> SemanticHit | None:
         """Turn a raw query result into a hit, or None if empty or below threshold.
