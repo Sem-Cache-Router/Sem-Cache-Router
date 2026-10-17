@@ -63,6 +63,13 @@ class Settings(BaseSettings):
     # Embedding.
     embedding_model: str = "all-MiniLM-L6-v2"
 
+    # OpenTelemetry tracing. Disabled by default so the gateway starts with no
+    # collector present and no errors.  The endpoint is where the OTLP exporter
+    # sends spans; None means tracing is a no-op even if enabled, which is the
+    # safe behaviour when no collector is reachable.
+    tracing_enabled: bool = False
+    otel_exporter_endpoint: str | None = None
+
     # Observability. Prompt text is caller data, so it reaches the logs only
     # when this is switched on deliberately in a development configuration.
     log_prompts: bool = False
