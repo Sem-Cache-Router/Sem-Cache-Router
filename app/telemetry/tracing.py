@@ -22,6 +22,7 @@
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Iterator
 from contextlib import contextmanager
 
@@ -52,6 +53,8 @@ SEMCACHE_COST_USD: str = "semcache.cost_usd"
 
 _TRACER_NAME = "semcache-router"
 
+log = logging.getLogger(__name__)
+
 
 def install_tracing(*, endpoint: str | None, enabled: bool) -> TracerProvider | None:
     """Install the OpenTelemetry tracer provider and exporter.
@@ -65,7 +68,15 @@ def install_tracing(*, endpoint: str | None, enabled: bool) -> TracerProvider | 
     carry no cost and export nothing.  This is the design that lets the test
     suite pass with no collector, no network, and no environment variable set.
     """
-    if not enabled or not endpoint:
+    if not enabled:
+        return None
+    if not endpoint:
+        # Enabled with nowhere to send spans is a misconfiguration rather than an
+        # outage, so it is said out loud. Tracing still stays off rather than
+        # stopping the gateway, as the setting's own comment promises.
+        log.warning(
+            "tracing is enabled but otel_exporter_endpoint is not set; no spans will be exported"
+        )
         return None
 
     from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
