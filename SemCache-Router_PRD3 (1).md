@@ -81,6 +81,8 @@ Date 30 August 2026
 
 - 32. Future Scope
 
+- 33. Implementation Amendments
+
 
 ## SemCache-Router
 
@@ -308,7 +310,7 @@ FAILED (502)
 
 - 2. Tier 1 exact match cache keyed on a SHA-256 hash of the normalised prompt and model.
 
-- 3. Tier 2 semantic cache using sentence-transformers embeddings and ChromaDB similarity search, with a configurable threshold.
+- 3. Tier 2 semantic cache using all-MiniLM-L6-v2 embeddings, run through the ONNX runtime, and ChromaDB similarity search, with a configurable threshold. See section 33.2.
 
 - 4. Redis backed token bucket rate limiter keyed on estimated token counts from tiktoken, reconciled against reported provider usage after the call.
 
@@ -428,7 +430,7 @@ The Tier 1 key is a SHA-256 hash over the model identifier and the normalised me
 
 ## 13.5 Similarity and threshold
 
-Tier 2 embeds the normalised prompt with a local sentence-transformers model and queries ChromaDB for the nearest stored prompt. A hit requires cosine similarity at or above the configured threshold. The benchmark exercises 0.75, 0.90 and 0.95, because the interesting behaviour of a semantic cache is not its performance at one threshold but the shape of the curve between hit rate and accuracy as the threshold moves.
+Tier 2 embeds the normalised prompt with a local all-MiniLM-L6-v2 model, run through the ONNX runtime that ChromaDB ships (section 33.2), and queries ChromaDB for the nearest stored prompt. A hit requires cosine similarity at or above the configured threshold. The collection is created in cosine space explicitly: ChromaDB defaults to squared L2 distance, under which one minus the distance is not a similarity (section 33.3). The benchmark exercises 0.75, 0.90 and 0.95, because the interesting behaviour of a semantic cache is not its performance at one threshold but the shape of the curve between hit rate and accuracy as the threshold moves.
 
 The embedding model is local rather than a hosted API. Two reasons. First, a hosted embedding call would add real cost to every Tier 2 lookup, including lookups that miss, and that cost would have to be netted out of the headline cost reduction figure or it would silently inflate it. Keeping embeddings local keeps the cost ledger clean. Second, it removes a second external dependency from the request path, which matters for a project whose other headline claim is about surviving external failures.
 
@@ -501,7 +503,7 @@ A cache entry is one logical record with two physical representations. Tier 1 st
 
 | Key or index | Store | Purpose |
 | --- | --- | --- |
-| semcache:exact:{hash} | Redis string | Tier 1 primary lookup, TTL applied at write |
+| semcache:exact:v1:{hash} | Redis hash | Tier 1 primary lookup, TTL applied at write. A hash rather than a string; see section 33.1 |
 | rl:{api_key}:{window} | Redis hash | Token bucket state, mutated only inside a Lua script |
 | Embedding index | ChromaDB collection | Cosine similarity search for Tier 2 |
 
@@ -783,7 +785,7 @@ On the reference figures. The published ElastiCache semantic caching benchmark r
 | TEST-003 | Prompt differing only in surrounding whitespace | Same hash, exact_hit |
 | TEST-004 | Paraphrase above threshold | semantic_hit with similarity recorded |
 | TEST-005 | Paraphrase below threshold | Miss, provider is called |
-| TEST-006 | Negated prompt, for example adding the word not Must miss, this is a false hit if it does not |   |
+| TEST-006 | Negated prompt, for example adding the word not Must miss, this is a false hit if it does not. Does not hold against the real model; see section 33.4 |   |
 | TEST-007 | Entity swapped prompt, same structure different | Must miss |
 |   | subject |   |
 | TEST-008 | Numeric value changed in an otherwise identical | Must miss |
@@ -921,7 +923,7 @@ Trade off. Two stores to keep consistent and two TTL policies to reason about.
 
 ADR-003: Local embedding model rather than a hosted embedding API
 
-Decision. Embeddings are produced by a local sentence-transformers model.
+Decision. Embeddings are produced by a local all-MiniLM-L6-v2 model, run through the ONNX runtime rather than sentence-transformers (amended; see section 33.2).
 
 Rationale. A hosted embedding call would add cost to every Tier 2 lookup including misses, contaminating the cost reduction figure, and would add a second external dependency to the request path.
 
@@ -991,6 +993,8 @@ Trade off. Slightly higher write cost, and state must be explicitly reset betwee
 
 - A reranking pass over the top few vector candidates before accepting a hit, to reduce false hits without lowering the threshold globally.
 
+- A guard on negation and changed numbers before a semantic hit is accepted. Section 33.4 shows no threshold defends against either, which moves this from optional to necessary for any deployment that serves real answers.
+
 - Sharded vector index with recall and latency measured against shard count.
 
 - Write through invalidation, so that a known stale answer can be evicted before its TTL expires.
@@ -998,3 +1002,60 @@ Trade off. Slightly higher write cost, and state must be explicitly reset betwee
 - Support for additional providers behind the existing adapter interface.
 
 - Including sampling parameters such as temperature in the cache key. They are excluded today, which means two requests differing only in temperature share an entry. That is acceptable for the benchmark workload, where temperature is fixed, and would not be acceptable in general.
+
+## 33. Implementation Amendments
+
+This section records where the implementation departs from the design above, and what building it measured. Each entry gives the reason, so a departure can be judged rather than discovered.
+
+## 33.1 Tier 1 entries are a Redis hash, not a string
+
+Section 18.2 specified a Redis string. A string holds the whole entry as one value, so recording a hit means reading it, editing the count and writing it back, and a plain SET clears the remaining TTL. That resurrects the entry for a full fresh lifetime on every hit, which is the sliding expiry section 13.6 rejects, arriving by accident with no error. SET with KEEPTTL avoids that but leaves the read and write racing, so two concurrent hits lose an increment. A hash fixes both: HINCRBY is atomic and HSET on an existing key does not touch its TTL, so preserving the TTL becomes a property of the data model rather than a rule every write has to remember. The key also carries a schema version, semcache:exact:v1, for the reason given in section 13.4.
+
+## 33.2 Embeddings run through ONNX, not sentence-transformers
+
+The model is unchanged: all-MiniLM-L6-v2, producing 384 wide unit vectors. Only the runtime differs. Resolving sentence-transformers on Python 3.14 pulls in torch and fifteen nvidia CUDA packages, none of which are needed to embed one sentence on a CPU. ChromaDB already depends on onnxruntime and tokenizers, which run the same model. The weights are a 79 MB download on first load, so they must be baked into the image at build time, and Tier 2 is off by default so that nothing outside the container downloads them unexpectedly.
+
+## 33.3 Vector store behaviour that shaped the design
+
+Three properties of ChromaDB 1.5.9 were verified rather than assumed, and each changed the implementation.
+
+- Distance defaults to squared L2. For a pair with true cosine similarity 0.60, the default reported a distance from which one minus distance gives 0.20. The collection is created in cosine space, and a test asserts the reported similarity equals the constructed cosine, since a hit or miss check alone would not catch the default.
+- Text without a vector is embedded by ChromaDB itself with its bundled model, and this happens even for a collection created with embedding_function set to None. Every call therefore passes a vector from the gateway's own embedder, and a test makes ChromaDB's embedder fail to prove it is never reached.
+- The HTTP client raises at construction when the server is down. The client is therefore built lazily through a factory, so a vector store outage at startup degrades the gateway to Tier 1 rather than stopping it. After a failure the cache waits a configurable cooldown before reconnecting, so requests during an outage do not each pay for a connection attempt that will fail.
+
+ChromaDB has no TTL. Expiry is stored as a timestamp in each entry's metadata and filtered in every query, so an expired entry is never served even before eviction removes it. The model is filtered the same way, so the same question asked of a different model never matches.
+
+## 33.4 Measured findings
+
+Cosine similarities from all-MiniLM-L6-v2 for pairs chosen to test the central claim of section 2:
+
+| Pair | Relationship | Similarity |
+| --- | --- | --- |
+| What is your refund policy? / How do I get my money back? | Same meaning | 0.551 |
+| What is the capital of France? / Tell me France's capital city. | Same meaning | 0.903 |
+| How do I cancel my order? / How do I cancel my account? | Different meaning | 0.682 |
+| What is 15 percent of 200? / What is 25 percent of 200? | Different meaning | 0.790 |
+| Is the store open on Sunday? / Is the store not open on Sunday? | Opposite meaning | 0.972 |
+
+At every threshold the benchmark sweeps, the paraphrase section 2 uses to motivate the project misses, and the negated question hits, serving the opposite answer. No single threshold separates them.
+
+The adversarial probe in evaluation/adversarial.py generates negated, entity swapped and renumbered variants of a small sample and reports the false hit rate, the share that would be served when they should have missed:
+
+| Mutation | 0.75 | 0.90 | 0.95 |
+| --- | --- | --- | --- |
+| Negation | 100% | 100% | 87.5% |
+| Numeric change | 100% | 50% | 25% |
+| Entity swap | 43% | 14% | 0% |
+| All 19 cases | 79% | 58% | 42% |
+
+Negated questions score between 0.96 and 0.98 against their originals. Raising the threshold trades hit rate for a lower entity swap error, but leaves negation almost undefended.
+
+## 33.5 Consequences for the acceptance criteria
+
+TEST-006 to TEST-008 state that these mutations must miss. Against the real model they do not, and asserting otherwise would fail for a property of the model rather than a defect in the code. They are therefore implemented as a measurement that reports the false hit rate, with one test that pins the negation finding so that a change in it is noticed. This is the reporting section 10 asks for: an experiment that can return an unfavourable number, with the unfavourable number reported.
+
+The sample is small and hand written. Before these figures are quoted as general, the benchmark workload from section 21.1 should be run through the same probe.
+
+## 33.6 Known limits
+
+The model reads roughly the first 256 word pieces of its input, so a long conversation is effectively judged on how it opens. Two conversations that agree at the start and diverge later can score as near duplicates.
