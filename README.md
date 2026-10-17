@@ -229,25 +229,36 @@ Further out: adaptive per entry thresholds instead of one global constant, a rer
 
 ## Project status
 
-Work in progress. The Tier 1 path works end to end against fakes: the same
-prompt sent twice is served from cache, with the provider called once. Tier 2,
-the rate limiter, the real provider adapters and the benchmark are not built.
+Work in progress. Both cache tiers work end to end against fakes: an exact
+repeat is served from Tier 1, and a reworded question whose embedding clears the
+similarity threshold is served from Tier 2 with the score that justified it. A
+Chroma outage degrades the gateway to Tier 1 rather than failing requests.
+
+Building Tier 2 also produced the project's central finding. Negated questions
+score 0.96 to 0.98 against their originals, above every threshold the benchmark
+sweeps, so a semantic cache serves the opposite answer to "Isn't the store open
+on Sunday?". Across negation, entity swaps and changed numbers, 42 percent of
+meaning changing rewrites are still served at the strictest threshold. The full
+measurement and what it means for the acceptance criteria are in section 33 of
+the PRD.
 
 - [x] Product requirements, architecture, API contract and design decisions written up
-- [x] Repository scaffold: every module, test and config file in place, commented, no logic yet
-- [ ] Compose stack filled in
+- [x] Repository scaffold
+- [x] Compose stack
 - [x] OpenAI compatible endpoint and schema validation
 - [x] Tier 1 exact match cache, with the TTL preserved on a hit
-- [ ] Provider adapter, token counting and cost computation
-- [ ] Tier 2 semantic cache, embedding and threshold search
-- [ ] TTL and eviction across both tiers
-- [ ] Token bucket rate limiter with reservation and reconciliation
+- [x] Tier 2 semantic cache: ONNX embeddings, cosine search, similarity threshold
+- [x] TTL and eviction across both tiers
+- [x] Degradation to Tier 1 when the vector store is unreachable
+- [x] Adversarial false hit probe, with results
+- [x] Metrics endpoint wired to real traffic
+- [x] Circuit breaker
+- [x] OpenAI and Anthropic adapters, built but not yet selectable at startup
+- [ ] Token bucket rate limiter wired into the route: built, but its interface does not yet match the route's calls
+- [ ] Breaker driven failover between providers
+- [ ] OpenTelemetry spans
 - [ ] Benchmark harness and workload replay
 - [ ] RAGAS quality parity pipeline
-- [x] Circuit breaker
-- [ ] Anthropic adapter and failover
-- [ ] Adversarial false hit suite
-- [ ] OpenTelemetry spans and metrics endpoint
 
 The plan runs twelve weeks from early September to a demo on 25 November, with checkpoints in mid September, mid October and mid November. The critical path is the semantic cache, which carries the most unknowns and gates two of the three demonstrations, so it's scheduled early enough to leave recovery time if it doesn't work first try.
 
