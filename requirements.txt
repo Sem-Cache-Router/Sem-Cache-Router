@@ -16,9 +16,10 @@
 #   tiktoken                  the limiter is not built, and tiktoken downloads
 #                             BPE files from the network on first use, which
 #                             would make CI flaky
-#   openai, anthropic         no real provider adapters yet
-#   chromadb,                 Tier 2
-#   sentence-transformers
+#   openai, anthropic         not needed: the adapters speak to the provider
+#                             APIs over httpx directly
+#   sentence-transformers     replaced by the ONNX runtime chromadb already
+#                             ships; see the state group below
 #   opentelemetry-*           observability phase
 #   ragas                     evaluation phase
 #   locust                    load testing phase
@@ -36,6 +37,13 @@ pydantic-settings==2.15.0
 
 # state
 redis==8.1.0
+
+# Tier 2 vector store and embedding runtime. chromadb brings onnxruntime and
+# tokenizers with it, which is enough to run all-MiniLM-L6-v2, the model the
+# PRD specifies. sentence-transformers would run the same model but pulls in
+# torch and fifteen nvidia CUDA packages to embed one sentence on a CPU, so the
+# ONNX path is used instead and the deviation is recorded in the PRD.
+chromadb==1.5.9
 
 # testing
 pytest==9.1.1
