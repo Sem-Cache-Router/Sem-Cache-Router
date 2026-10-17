@@ -251,3 +251,18 @@ def test_request_span_works_without_provider() -> None:
         set_cache_outcome(span, cache_status="miss", cost_usd=0.0)
         set_gen_ai_attributes(span, system="stub", model="stub-model")
     # No assertion on span content — the point is that it did not raise.
+
+
+def test_enabling_tracing_without_an_endpoint_says_so(caplog: pytest.LogCaptureFixture) -> None:
+    """Enabled with nowhere to send spans is a misconfiguration. Tracing stays
+    off rather than stopping the gateway, but the operator is told."""
+    with caplog.at_level("WARNING", logger="app.telemetry.tracing"):
+        assert install_tracing(endpoint=None, enabled=True) is None
+    assert "otel_exporter_endpoint is not set" in caplog.text
+
+
+def test_disabled_tracing_stays_quiet(caplog: pytest.LogCaptureFixture) -> None:
+    """Off by default is the normal case and should not produce a warning."""
+    with caplog.at_level("WARNING", logger="app.telemetry.tracing"):
+        assert install_tracing(endpoint=None, enabled=False) is None
+    assert caplog.text == ""
