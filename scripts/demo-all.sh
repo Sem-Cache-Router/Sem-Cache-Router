@@ -20,5 +20,10 @@ pause "the negation finding"; "$ROOT/scripts/demo-negation.sh"
 pause "degradation";          "$ROOT/scripts/demo-degradation.sh"
 pause "the adversarial probe"; "$ROOT/scripts/adversarial.sh"
 
+# Failover needs a gateway configured for it, so the Tier 2 one is stopped first.
+# The failover demo starts its own and stops it again when it finishes.
+"$ROOT/scripts/gateway-stop.sh"
+pause "failover";             "$ROOT/scripts/demo-failover.sh"
+
 echo
-ok "walkthrough complete. The stack is still running: scripts/status.sh, scripts/stop-all.sh"
+ok "walkthrough complete. Redis and Chroma are still running: scripts/status.sh, scripts/stop-all.sh"
