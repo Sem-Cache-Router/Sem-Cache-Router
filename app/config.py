@@ -179,6 +179,15 @@ class Settings(BaseSettings):
     # seconds; a limit tuned to the median would fail the requests that cost most.
     provider_timeout_seconds: float = Field(default=30.0, gt=0)
 
+    # Model routing. When enabled, single-turn short prompts (no code fence, under
+    # routing_simple_max_tokens) are sent to the cheap model instead of whatever
+    # model the caller requested. The cache key still uses the requested model (see
+    # section 33.7 in the PRD), so routing changes do not invalidate existing entries.
+    # routing_cheap_model is required when routing_enabled=True, and rejected at
+    # startup otherwise, so wiring errors surface before the first request.
+    routing_enabled: bool = False
+    routing_cheap_model: str | None = None
+    routing_simple_max_tokens: int = Field(default=512, gt=0)
 
     @field_validator("chroma_host")
     @classmethod
@@ -229,6 +238,20 @@ class Settings(BaseSettings):
         if parsed.scheme not in ("http", "https") or not parsed.hostname:
             raise ValueError("a provider base URL must be an http or https URL")
         return value.rstrip("/")
+
+    @model_validator(mode="after")
+    def _routing_cheap_model_required_when_enabled(self) -> Settings:
+        """Require routing_cheap_model when routing_enabled=True.
+
+        A misconfigured router silently falls back to the requested model,
+        which is misleading. Catching the missing value at startup makes the
+        misconfiguration explicit before any request is served.
+        """
+        if self.routing_enabled and not self.routing_cheap_model:
+            raise ValueError(
+                "routing_cheap_model is required when routing_enabled=True"
+            )
+        return self
 
     @model_validator(mode="after")
     def _secondary_differs_from_primary(self) -> Settings:

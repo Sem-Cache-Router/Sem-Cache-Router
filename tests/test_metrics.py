@@ -296,6 +296,7 @@ def test_metrics_endpoint_returns_all_fields(client: TestClient) -> None:
         "requests_total", "hit_ratio", "tier1_hit_ratio", "tier2_hit_ratio",
         "throttled_requests", "breaker_failovers", "tier2_evicted_total",
         "total_provider_spend_usd",
+        "routed_cheap", "routed_unchanged",
         "latency_window", "hit_sample_count", "miss_sample_count",
         "latency_hit_p50_ms", "latency_hit_p95_ms",
         "latency_miss_p50_ms", "latency_miss_p95_ms",

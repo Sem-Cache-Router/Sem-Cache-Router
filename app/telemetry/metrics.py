@@ -40,6 +40,8 @@ class Metrics:
         self.breaker_failovers = 0
         self.tier2_evicted_total = 0
         self.total_provider_spend_usd = 0.0
+        self.routed_cheap = 0
+        self.routed_unchanged = 0
         self._hit_latencies: deque[float] = deque(maxlen=latency_window)
         self._miss_latencies: deque[float] = deque(maxlen=latency_window)
 
@@ -84,6 +86,16 @@ class Metrics:
         """Count expired Tier 2 entries removed by a housekeeping pass."""
         with self._lock:
             self.tier2_evicted_total += count
+
+    def record_routed_cheap(self) -> None:
+        """Count a request routed to the cheaper model."""
+        with self._lock:
+            self.routed_cheap += 1
+
+    def record_routed_unchanged(self) -> None:
+        """Count a request whose model routing left unchanged."""
+        with self._lock:
+            self.routed_unchanged += 1
 
     def add_spend(self, amount: float) -> None:
         """Accumulate provider cost in USD."""
@@ -140,6 +152,8 @@ class Metrics:
                 "breaker_failovers": self.breaker_failovers,
                 "tier2_evicted_total": self.tier2_evicted_total,
                 "total_provider_spend_usd": self.total_provider_spend_usd,
+                "routed_cheap": self.routed_cheap,
+                "routed_unchanged": self.routed_unchanged,
                 "latency_window": self._latency_window,
                 "hit_sample_count": len(self._hit_latencies),
                 "miss_sample_count": len(self._miss_latencies),

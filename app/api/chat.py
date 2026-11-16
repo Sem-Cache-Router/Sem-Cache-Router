@@ -50,6 +50,7 @@ from app.models import (
 )
 from app.providers.base import ProviderError
 from app.providers.router import AllProvidersFailed
+from app.router import choose_model
 from app.telemetry.request_record import RequestOutcome, breaker_state_of, record_request
 from app.telemetry.tracing import child_span, request_span
 
@@ -196,11 +197,22 @@ async def _serve(
             similarity=semantic.similarity,
         )
 
+    # Step 6. Model routing. The routing result controls which model the provider
+    # is asked for; the cache key still uses the model the caller requested.
+    routing = choose_model(payload.model, payload.messages, state.settings)
+    outcome.routed_model = routing.model
+    outcome.routing_reason = routing.reason
+    if routing.reason == "routed_cheap":
+        metrics.record_routed_cheap()
+    else:
+        metrics.record_routed_unchanged()
+
     # Steps 6 and 7. The provider call, through its breaker, with failover. The
     # child span covers the whole of it, so a failover shows in the trace as one
     # span that took two attempts rather than as unexplained latency.
-    with child_span(f"provider call {payload.model}", state):
-        provider_response = await _complete(state, payload, outcome)
+    routed_payload = payload.model_copy(update={"model": routing.model})
+    with child_span(f"provider call {routing.model}", state):
+        provider_response = await _complete(state, routed_payload, outcome)
 
     # Step 8. Write through and reconcile.
     body = _to_body(provider_response, payload.model)

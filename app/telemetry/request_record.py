@@ -20,7 +20,13 @@ from typing import Any
 from opentelemetry import trace
 
 from app.models import Message
-from app.telemetry.tracing import SEMCACHE_TIER2_STATUS, set_cache_outcome, set_gen_ai_attributes
+from app.telemetry.tracing import (
+    SEMCACHE_ROUTED_MODEL,
+    SEMCACHE_ROUTING_REASON,
+    SEMCACHE_TIER2_STATUS,
+    set_cache_outcome,
+    set_gen_ai_attributes,
+)
 
 log = logging.getLogger("semcache.request")
 
@@ -49,6 +55,8 @@ class RequestOutcome:
     cost_usd: float = 0.0
     error_code: str | None = None
     latency_ms: float | None = None
+    routed_model: str | None = None
+    routing_reason: str | None = None
 
 
 def breaker_state_of(state: Any) -> str:
@@ -102,6 +110,8 @@ def _log_fields(
         "breaker_state": outcome.breaker_state,
         "error_code": outcome.error_code,
         "latency_ms": outcome.latency_ms,
+        "routed_model": outcome.routed_model,
+        "routing_reason": outcome.routing_reason,
     }
     if log_prompts:
         fields["prompt"] = [message.model_dump() for message in messages]
@@ -142,6 +152,10 @@ def record_request(
         span.set_attribute(SEMCACHE_TIER2_STATUS, outcome.tier2_status)
     if outcome.error_code is not None:
         span.set_attribute(ERROR_TYPE, outcome.error_code)
+    if outcome.routed_model is not None:
+        span.set_attribute(SEMCACHE_ROUTED_MODEL, outcome.routed_model)
+    if outcome.routing_reason is not None:
+        span.set_attribute(SEMCACHE_ROUTING_REASON, outcome.routing_reason)
 
     level = logging.WARNING if outcome.error_code else logging.INFO
     log.log(level, json.dumps(_log_fields(span, outcome, messages, log_prompts), sort_keys=True))

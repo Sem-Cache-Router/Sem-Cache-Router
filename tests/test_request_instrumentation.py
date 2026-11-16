@@ -27,6 +27,7 @@ PROMPT = "What is the capital of France? My account number is 4421-8890."
 LOG_FIELDS = {
     "request_id", "cache_status", "similarity", "tier2_status", "provider", "model",
     "input_tokens", "output_tokens", "cost_usd", "breaker_state", "error_code", "latency_ms",
+    "routed_model", "routing_reason",
 }
 
 

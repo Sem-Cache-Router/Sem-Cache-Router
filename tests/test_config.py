@@ -129,6 +129,36 @@ def test_an_unusable_otel_endpoint_is_rejected_at_startup(url: str) -> None:
         settings(otel_exporter_endpoint=url)
 
 
+def test_routing_is_disabled_by_default() -> None:
+    """Routing off by default means existing deployments are unaffected."""
+    assert settings().routing_enabled is False
+
+
+def test_routing_requires_cheap_model_when_enabled() -> None:
+    """Enabling routing without a cheap model is a startup error, not a silent no-op."""
+    with pytest.raises(ValidationError, match="routing_cheap_model is required"):
+        settings(routing_enabled=True)
+
+
+def test_routing_enabled_with_cheap_model_is_valid() -> None:
+    """The correct configuration is accepted without raising."""
+    s = settings(routing_enabled=True, routing_cheap_model="gpt-4o-mini")
+    assert s.routing_enabled is True
+    assert s.routing_cheap_model == "gpt-4o-mini"
+
+
+def test_routing_simple_max_tokens_defaults_to_512() -> None:
+    """The default ceiling matches what the .env.example documents."""
+    assert settings().routing_simple_max_tokens == 512
+
+
+@pytest.mark.parametrize("bad", [0, -1, -100])
+def test_routing_simple_max_tokens_rejects_non_positive(bad: int) -> None:
+    """Zero or negative tokens cannot be a ceiling for a prompt."""
+    with pytest.raises(ValidationError):
+        settings(routing_simple_max_tokens=bad)
+
+
 def test_metrics_latency_window_defaults_to_ten_thousand() -> None:
     """The default window is large enough for a typical benchmark run."""
     assert settings().metrics_latency_window == 10_000
