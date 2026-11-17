@@ -25,11 +25,11 @@ group() {
 
 group "set up and check"   setup check test test-model complexity
 group "run the stack"      run-tier1 run-tier2 status logs reset-cache stop-all
-group "single services"    redis-start redis-stop chroma-start chroma-stop gateway-start gateway-stop
-group "demonstrations"     demo-tier1 demo-tier2 demo-negation demo-degradation adversarial demo-all
+group "single services"    redis-start redis-stop chroma-start chroma-stop gateway-start gateway-stop mock-upstream-start mock-upstream-stop
+group "demonstrations"     demo-tier1 demo-tier2 demo-negation demo-degradation demo-failover adversarial demo-all
 group "this list"          help
 
 echo
-echo "Ports default to gateway 8000, Chroma 8001, Redis 6379. Override with"
-echo "GATEWAY_PORT, CHROMA_PORT and REDIS_PORT; logs and pid files go to"
+echo "Ports default to gateway 8000, Chroma 8001, Redis 6379, mock upstream 8002. Override"
+echo "with GATEWAY_PORT, CHROMA_PORT, REDIS_PORT and MOCK_PORT; logs and pid files go to"
 echo "SEMCACHE_RUN_DIR (default /tmp/semcache-router)."

@@ -22,6 +22,7 @@ else line redis "$REDIS_PORT" down ""
 fi
 if chroma_up; then line chroma "$CHROMA_PORT" up "$(owner chroma)"; else line chroma "$CHROMA_PORT" down ""; fi
 if gateway_up; then line gateway "$GATEWAY_PORT" up "$(owner gateway)"; else line gateway "$GATEWAY_PORT" down ""; fi
+if mock_up; then line mock "$MOCK_PORT" up "$(owner mock)"; else line mock "$MOCK_PORT" down ""; fi
 
 if gateway_up; then
   echo

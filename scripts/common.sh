@@ -19,6 +19,8 @@ GATEWAY_PORT="${GATEWAY_PORT:-8000}"
 CHROMA_PORT="${CHROMA_PORT:-8001}"
 REDIS_PORT="${REDIS_PORT:-6379}"
 GATEWAY_URL="http://localhost:$GATEWAY_PORT"
+MOCK_PORT="${MOCK_PORT:-8002}"
+MOCK_URL="http://localhost:$MOCK_PORT"
 
 # Process ids, logs and Chroma's data live outside the repository, so running
 # the stack never leaves files for git to pick up.
@@ -86,6 +88,8 @@ stop_pid() {
 }
 
 gateway_up() { curl -sf "$GATEWAY_URL/health" >/dev/null; }
+
+mock_up() { curl -sf "$MOCK_URL/stats" >/dev/null; }
 
 ask() {
   # ask <description> <json body> [curl args]: one completion request, printed

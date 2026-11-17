@@ -254,9 +254,9 @@ the PRD.
 - [x] Adversarial false hit probe, with results
 - [x] Metrics endpoint wired to real traffic
 - [x] Circuit breaker
-- [x] OpenAI and Anthropic adapters, built but not yet selectable at startup
+- [x] OpenAI and Anthropic adapters, selected at startup from settings
 - [ ] Token bucket rate limiter wired into the route: built, but its interface does not yet match the route's calls
-- [ ] Breaker driven failover between providers
+- [x] Breaker driven failover between providers, demonstrated by `scripts/demo-failover.sh`
 - [x] OpenTelemetry spans and a structured log line per request, prompts redacted by default
 - [ ] Benchmark harness and workload replay
 - [ ] RAGAS quality parity pipeline
@@ -289,12 +289,15 @@ app/
     openai_client.py     primary provider
     anthropic_client.py  failover target
     breaker.py           circuit breaker state machine
+    router.py            failover across providers, each behind its own breaker
+    factory.py           builds the providers, breakers and router from settings
   telemetry/
     tracing.py           OpenTelemetry spans, gen_ai conventions
     metrics.py           counters behind /metrics
 benchmarks/
   harness.py             workload replay across thresholds
   workload.py            committed workload subset loader
+  mock_upstream.py       stand in for the vendor APIs, for demos and benchmarks
   report.py              report generation from the counters
 evaluation/
   ragas_pipeline.py      quality parity scoring
@@ -343,7 +346,7 @@ curl -s localhost:8000/v1/chat/completions -H 'Authorization: Bearer test' -H 'C
 
 The first reports `"semcache_status": "miss"`, the second `"exact_hit"` with identical content. That pair proves normalisation, hashing and the Tier 1 cache in one go.
 
-Tier 2, the token budget and provider failover are not wired yet, so `docker compose up` gives you the stack but not those behaviours.
+The token budget is not wired yet. Tier 2 and failover are off until `SEMCACHE_SEMANTIC_CACHE_ENABLED` and `SEMCACHE_SECONDARY_PROVIDER` are set, and `scripts/demo-failover.sh` shows failover running against a mock vendor API, with no keys needed.
 
 ## Environment variables
 
@@ -351,16 +354,20 @@ Every value is read from the environment. There are no constants in code, so a b
 
 | Variable | Default | What it controls |
 | - | - | - |
-| `OPENAI_API_KEY` | none | Primary provider credential. Required. Never committed. |
-| `ANTHROPIC_API_KEY` | none | Failover provider credential. Required. Never committed. |
+| `OPENAI_API_KEY` | none | OpenAI credential. Required when OpenAI is the primary or secondary. Never committed. |
+| `ANTHROPIC_API_KEY` | none | Anthropic credential. Required when Anthropic is the primary or secondary. Never committed. |
 | `SEMCACHE_REDIS_URL` | `redis://redis:6379/0` | Tier 1 cache and rate limiter buckets. |
 | `SEMCACHE_CHROMA_HOST` | `http://chromadb:8000` | Tier 2 vector index. |
 | `SEMCACHE_SIMILARITY_THRESHOLD` | `0.90` | Theta. A Tier 2 hit needs a score at or above this. |
 | `SEMCACHE_CACHE_TTL_SECONDS` | `3600` | Entry lifetime, applied at write time, never extended on a hit. |
 | `SEMCACHE_BUCKET_CAPACITY` | `100000` | Maximum tokens a caller may hold. |
 | `SEMCACHE_BUCKET_REFILL_RATE` | `1000` | Tokens restored per second. Also derives the retry hint on a 429. |
-| `SEMCACHE_PRIMARY_PROVIDER` | `openai` | Provider tried first. |
-| `SEMCACHE_SECONDARY_PROVIDER` | `anthropic` | Failover target. |
+| `SEMCACHE_PRIMARY_PROVIDER` | `stub` | Provider tried first: `stub`, `openai` or `anthropic`. The stub needs no key and no network. |
+| `SEMCACHE_SECONDARY_PROVIDER` | none | Failover target. Unset means no failover. Must differ from the primary, and the gateway will not start without its key. |
+| `SEMCACHE_SECONDARY_MODEL` | provider default | The model the secondary is called with, since one vendor's model name means nothing to another. |
+| `SEMCACHE_OPENAI_BASE_URL` | `https://api.openai.com/v1` | Where the OpenAI adapter sends requests. |
+| `SEMCACHE_ANTHROPIC_BASE_URL` | `https://api.anthropic.com/v1` | Where the Anthropic adapter sends requests. |
+| `SEMCACHE_PROVIDER_TIMEOUT_SECONDS` | `30` | How long one provider call may take before it counts as a failure. |
 | `SEMCACHE_BREAKER_FAILURE_THRESHOLD` | `5` | Failures in the window before the breaker opens. |
 | `SEMCACHE_BREAKER_WINDOW_SECONDS` | `60` | Window those failures are counted in. |
 | `SEMCACHE_BREAKER_BASE_BACKOFF` | `1.0` | Starting retry delay in seconds. |

@@ -1060,3 +1060,17 @@ The sample is small and hand written. Before these figures are quoted as general
 ## 33.6 Known limits
 
 The model reads roughly the first 256 word pieces of its input, so a long conversation is effectively judged on how it opens. Two conversations that agree at the start and diverge later can score as near duplicates.
+
+## 33.7 Failover is a router over per provider breakers
+
+Section 17 describes the breaker and BR-008 asks for failover, but not how the two meet. A FailoverRouter holds an ordered list of providers, each behind its own breaker, and tries them in turn inside one call, so the caller never sees the first failure. The request path asks for an answer and is told which provider gave it, the state of that provider's breaker when the call was made, and whether it had to fail over.
+
+What fails over is a decision the PRD left open. A provider that is down, slow, rate limiting, unreadable or has an open breaker is a reason to try the next one. A request the provider rejects as malformed (400, 404, 413, 422) is not, because the next provider would say the same, and it is reported to the caller as a 400. A 401 or 403 is the gateway's own key being refused, so it fails over, though the breaker does not count it, in line with section 17.
+
+A fallback is called with its own model, set by SEMCACHE_SECONDARY_MODEL or the provider's default, because one vendor's model name means nothing to another and sending gpt-4o-mini to Anthropic is a 404. A rejection from a fallback is therefore a fault in the gateway's configuration and counts as a failure, not as a verdict on the caller's request. The cache key still uses the model the caller asked for, so an answer reached by failover is cached and served like any other.
+
+Failover is off unless SEMCACHE_SECONDARY_PROVIDER is set, and a gateway asked for failover without that provider's key refuses to start instead of running without it.
+
+Breakers are per process. Several gateways each learn about an outage separately, and while a breaker is half open every concurrent request is let through as a probe, which is how the section 17 breaker behaves as built.
+
+Acceptance demonstration 3 is run by scripts/demo-failover.sh, which drives the real adapters against benchmarks/mock_upstream.py, a stand in for both vendors that can be told to fail on command. It needs no keys and costs nothing.
