@@ -78,6 +78,7 @@ async def build_semantic_cache(settings: Settings) -> SemanticCache:
         threshold=settings.similarity_threshold,
         reconnect_seconds=settings.chroma_reconnect_seconds,
         timeout_seconds=settings.chroma_timeout_seconds,
+        negation_guard=settings.semantic_negation_guard,
     )
 
 
