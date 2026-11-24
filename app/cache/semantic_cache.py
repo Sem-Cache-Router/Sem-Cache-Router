@@ -38,6 +38,7 @@ from typing import Any
 
 from app.cache.embedder import Embedder
 from app.cache.keys import normalise_messages
+from app.cache.negation_guard import same_polarity
 from app.models import Message
 
 # Chroma defaults to squared L2 distance. Cosine has to be requested when the
@@ -115,6 +116,7 @@ class SemanticCache:
         threshold: float,
         reconnect_seconds: float = 30.0,
         timeout_seconds: float = 2.0,
+        negation_guard: bool = False,
         clock: Callable[[], float] = time.time,
     ) -> None:
         """Hold what the cache needs; connect to nothing yet.
@@ -131,6 +133,10 @@ class SemanticCache:
         has hung, rather than refused the connection, raises nothing, so without
         a bound the failure handling above would never run and each request would
         wait on it indefinitely.
+
+        With negation_guard on, a candidate that clears the threshold is still
+        refused when it and the new prompt disagree on negation; see
+        app/cache/negation_guard.py.
         """
         self._client_factory = client_factory
         self._embedder = embedder
@@ -139,6 +145,7 @@ class SemanticCache:
         self._threshold = threshold
         self._reconnect_seconds = reconnect_seconds
         self._timeout_seconds = timeout_seconds
+        self._negation_guard = negation_guard
         self._clock = clock
         self._collection: Any = None
         self._unavailable_until = 0.0
@@ -264,17 +271,18 @@ class SemanticCache:
         routine miss. search() delegates here and discards the status, so
         existing callers need no change.
         """
-        vector = await self._embedder.encode(prompt_text(messages))
+        text = prompt_text(messages)
+        vector = await self._embedder.encode(text)
         result = await self._call(
             "query",
             query_embeddings=[vector],
             n_results=1,
             where={"$and": [{"model": model}, {"expires_at": {"$gt": self._clock()}}]},
-            include=["metadatas", "distances"],
+            include=["metadatas", "distances", "documents"],
         )
         if result is UNAVAILABLE:
             return Tier2Result(hit=None, unavailable=True)
-        return Tier2Result(hit=self._best_hit(result), unavailable=False)
+        return Tier2Result(hit=self._best_hit(result, text), unavailable=False)
 
     async def search(self, model: str, messages: list[Message]) -> SemanticHit | None:
         """Return the nearest live entry for this model if it clears the threshold.
@@ -310,11 +318,13 @@ class SemanticCache:
             return 0
         return len(expired["ids"])
 
-    def _best_hit(self, result: Any) -> SemanticHit | None:
-        """Turn a raw query result into a hit, or None if empty or below threshold.
+    def _best_hit(self, result: Any, text: str | None = None) -> SemanticHit | None:
+        """Turn a raw query result into a hit, or None if empty, below threshold, or guarded.
 
         An empty or fully filtered collection comes back as [[]] rather than an
-        error, so the emptiness check comes before any indexing.
+        error, so the emptiness check comes before any indexing. text is the new
+        prompt, which the negation guard compares with the stored one; search
+        always passes it.
         """
         ids = result["ids"][0]
         if not ids:
@@ -322,9 +332,19 @@ class SemanticCache:
         similarity = similarity_from_distance(result["distances"][0][0])
         if similarity < self._threshold:
             return None
+        if self._refused_by_guard(result, text):
+            log.info("semantic hit at %.4f refused: the prompts differ in negation", similarity)
+            return None
         metadata = result["metadatas"][0][0]
         return SemanticHit(
             response_body=json.loads(metadata["response_body"]),
             similarity=similarity,
             entry_id=ids[0],
         )
+
+    def _refused_by_guard(self, result: Any, text: str | None) -> bool:
+        """Whether the negation guard refuses this hit: the stored and new prompts disagree."""
+        if not self._negation_guard or text is None:
+            return False
+        stored = (result.get("documents") or [[None]])[0][0]
+        return stored is not None and not same_polarity(stored, text)
