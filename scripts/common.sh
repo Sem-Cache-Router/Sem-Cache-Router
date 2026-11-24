@@ -89,6 +89,21 @@ stop_pid() {
 
 gateway_up() { curl -sf "$GATEWAY_URL/health" >/dev/null; }
 
+compose() {
+  # compose <args>: docker compose for the container stack. Goes through sudo
+  # only when this user cannot reach the Docker socket but sudo needs no
+  # password, so a script never stops to ask for one halfway through.
+  docker compose version >/dev/null 2>&1 \
+    || die "the docker compose plugin is missing; install docker-compose"
+  if docker info >/dev/null 2>&1; then
+    docker compose "$@"
+  elif sudo -n docker info >/dev/null 2>&1; then
+    sudo -n docker compose "$@"
+  else
+    die "cannot reach Docker; start it (sudo systemctl start docker) or join the docker group"
+  fi
+}
+
 mock_up() { curl -sf "$MOCK_URL/stats" >/dev/null; }
 
 ask() {
