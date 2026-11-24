@@ -29,13 +29,20 @@ services:
       dockerfile: Dockerfile
     ports:
       - "8000:8000"
+    # .env is optional: without one the gateway runs with the stub provider.
     env_file:
-      - .env
+      - path: .env
+        required: false
     environment:
       # Enable tracing and point it at Jaeger's OTLP/HTTP ingest. These
       # override whatever is in .env so the Compose stack always traces.
       SEMCACHE_TRACING_ENABLED: "true"
       SEMCACHE_OTEL_EXPORTER_ENDPOINT: "http://jaeger:4318"
+      # Inside the stack the stores are reached by service name, not localhost,
+      # and Chroma listens on its own port 8000 on the internal network.
+      SEMCACHE_REDIS_URL: "redis://redis:6379/0"
+      SEMCACHE_CHROMA_HOST: "http://chromadb:8000"
+      SEMCACHE_SEMANTIC_CACHE_ENABLED: "true"
     depends_on:
       redis:
         condition: service_healthy
@@ -59,11 +66,20 @@ services:
     restart: unless-stopped
 
   chromadb:
-    image: chromadb/chroma:latest
+    # Pinned to the same version as the chromadb client in requirements.txt,
+    # because client and server must agree on the v2 API.
+    image: chromadb/chroma:1.5.9
     volumes:
-      - chroma_data:/chroma/chroma
+      # Chroma 1.x persists to /data (persist_path in the image's config.yaml).
+      - chroma_data:/data
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/heartbeat"]
+      # The image ships neither curl nor wget, so bash's /dev/tcp asks the
+      # v2 heartbeat directly.
+      test:
+        - CMD
+        - bash
+        - -c
+        - exec 3<>/dev/tcp/127.0.0.1/8000 && printf 'GET /api/v2/heartbeat HTTP/1.0\r\n\r\n' >&3 && grep -q nanosecond <&3
       interval: 5s
       timeout: 3s
       retries: 5
@@ -78,7 +94,9 @@ services:
       - "16686:16686"   # Jaeger UI
       - "4318:4318"     # OTLP/HTTP ingest (used by gateway)
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:14269/ | grep -q ok"]
+      # The admin endpoint answers {"status":"Server available",...}; it never
+      # contains "ok", so the check looks for the word it does send.
+      test: ["CMD-SHELL", "wget -qO- http://localhost:14269/ | grep -q 'Server available'"]
       interval: 5s
       timeout: 3s
       retries: 10
