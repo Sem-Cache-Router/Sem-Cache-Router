@@ -297,7 +297,7 @@ async def test_the_configured_timeout_reaches_the_cache(
     from app import main
 
     class FakeEmbedder:
-        def __init__(self, model_name: str) -> None:
+        def __init__(self, model_name: str, *, cache_size: int = 0) -> None:
             pass
 
         def load(self) -> None:

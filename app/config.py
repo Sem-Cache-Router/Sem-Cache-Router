@@ -88,6 +88,11 @@ class Settings(BaseSettings):
     # Embedding.
     embedding_model: str = "all-MiniLM-L6-v2"
 
+    # How many recent prompt embeddings to keep, or 0 for none. A miss embeds its
+    # prompt twice (search, then store), and the embedder is the bottleneck under
+    # load, so this saves real work for about 3 KB per entry.
+    embedding_cache_size: int = Field(default=1024, ge=0)
+
     # Tier 2. Off by default, so the gateway still starts and serves when no
     # vector store is running, which is the situation for the test suite and
     # for anyone running it locally on the stub provider. Compose turns it on.

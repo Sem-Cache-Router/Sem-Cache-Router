@@ -104,16 +104,20 @@ async def test_building_the_cache_loads_the_embedder_first(
 ) -> None:
     """Weights load at startup, so the first request does not pay for them."""
     loaded: list[str] = []
+    sizes: list[int] = []
 
     class FakeEmbedder:
-        def __init__(self, model_name: str) -> None:
+        def __init__(self, model_name: str, *, cache_size: int) -> None:
             self.model_name = model_name
+            self.cache_size = cache_size
 
         def load(self) -> None:
             loaded.append(self.model_name)
+            sizes.append(self.cache_size)
 
     monkeypatch.setattr(main, "OnnxEmbedder", FakeEmbedder)
     cache = await main.build_semantic_cache(settings)
 
     assert loaded == [settings.embedding_model]
+    assert sizes == [settings.embedding_cache_size]
     assert cache is not None
