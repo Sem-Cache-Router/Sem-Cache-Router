@@ -114,6 +114,7 @@ class SemanticCache:
         collection_name: str,
         ttl_seconds: int,
         threshold: float,
+        max_entries: int | None = None,
         reconnect_seconds: float = 30.0,
         timeout_seconds: float = 2.0,
         negation_guard: bool = False,
@@ -143,6 +144,7 @@ class SemanticCache:
         self._collection_name = collection_name
         self._ttl_seconds = ttl_seconds
         self._threshold = threshold
+        self._max_entries = max_entries
         self._reconnect_seconds = reconnect_seconds
         self._timeout_seconds = timeout_seconds
         self._negation_guard = negation_guard
@@ -292,6 +294,31 @@ class SemanticCache:
         Chroma was reachable.
         """
         return (await self.search_with_status(model, messages)).hit
+
+    async def evict_over_capacity(self) -> int:
+        """Delete the oldest entries beyond max_entries and return how many went.
+
+        Oldest by when they were stored, since a hit does not write back to the
+        entry. Reads every entry's metadata to sort them, which is why it runs on
+        the eviction interval and never on a request, and only once the
+        collection is over its bound.
+        """
+        if self._max_entries is None:
+            return 0
+        count = await self._call("count")
+        if count is UNAVAILABLE or count <= self._max_entries:
+            return 0
+        everything = await self._call("get", include=["metadatas"])
+        if everything is UNAVAILABLE:
+            return 0
+        by_age = sorted(
+            zip(everything["ids"], everything["metadatas"], strict=True),
+            key=lambda pair: pair[1].get("created_at", 0.0),
+        )
+        excess = [entry_id for entry_id, _ in by_age[: len(by_age) - self._max_entries]]
+        if not excess or await self._call("delete", ids=excess) is UNAVAILABLE:
+            return 0
+        return len(excess)
 
     async def is_available(self) -> bool:
         """Report whether Chroma can be reached right now.

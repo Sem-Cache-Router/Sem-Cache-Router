@@ -30,16 +30,20 @@ Sleep = Callable[[float], Awaitable[None]]
 
 
 async def evict_once(cache: SemanticCache, on_evicted: Callable[[int], None]) -> None:
-    """Run one pass: remove what has expired, and report how many went.
+    """Run one pass: remove what has expired, then any excess, and report how many went.
+
+    Expired entries go first, so the capacity bound only ever removes live ones
+    when expiry alone was not enough.
 
     Swallows every ordinary failure, including one from the callback, and says so
     in the log. The next interval simply tries again.
     """
     try:
-        removed = await cache.evict_expired()
-        if removed:
-            log.info("evicted %d expired entries from Tier 2", removed)
-            on_evicted(removed)
+        expired = await cache.evict_expired()
+        excess = await cache.evict_over_capacity()
+        if expired or excess:
+            log.info("evicted %d expired and %d excess entries from Tier 2", expired, excess)
+            on_evicted(expired + excess)
     except Exception:
         log.warning("Tier 2 eviction pass failed; trying again next interval", exc_info=True)
 
