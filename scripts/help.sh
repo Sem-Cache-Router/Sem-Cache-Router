@@ -23,7 +23,7 @@ group() {
   done
 }
 
-group "set up and check"   setup check test test-model complexity
+group "set up and check"   setup check test test-model complexity load-test
 group "run the stack"      run-tier1 run-tier2 status logs reset-cache stop-all
 group "single services"    redis-start redis-stop chroma-start chroma-stop gateway-start gateway-stop mock-upstream-start mock-upstream-stop
 group "demonstrations"     demo-tier1 demo-tier2 demo-negation demo-degradation demo-failover adversarial demo-all
