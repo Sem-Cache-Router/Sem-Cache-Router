@@ -113,7 +113,7 @@ async def test_the_gateway_builds_tier2_with_the_configured_guard(
     import app.main as main
 
     class NoLoad:
-        def __init__(self, model: str) -> None:
+        def __init__(self, model: str, **options: object) -> None:
             pass
 
         def load(self) -> None:
