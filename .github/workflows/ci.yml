@@ -5,6 +5,7 @@
 #   type check    mypy over app
 #   tests         pytest, which needs no services thanks to the fakes
 #   secret scan   so a provider key can never reach the history unnoticed
+#   script lint   shellcheck over scripts/, which the demos run on
 #
 # Lint, tests and the secret scan gate every merge into main.
 #
@@ -69,6 +70,22 @@ jobs:
 
       - name: Test with coverage
         run: pytest --cov --cov-fail-under=85
+
+  scripts:
+    name: Shell script lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
+      # shellcheck ships on the hosted Ubuntu runners. -x follows the
+      # "source common.sh" line in every script, and the severity is warning so
+      # style notes do not fail a build. The demos are what the project is shown
+      # with, so a quoting bug in them is a real bug.
+      - name: Lint the scripts
+        run: |
+          shellcheck --version
+          shellcheck -x -S warning scripts/*.sh
 
   secrets:
     name: Secret scan

@@ -27,6 +27,8 @@ MOCK_URL="http://localhost:$MOCK_PORT"
 RUN_DIR="${SEMCACHE_RUN_DIR:-/tmp/semcache-router}"
 mkdir -p "$RUN_DIR"
 
+# Read by redis-start, redis-stop, logs and status, which source this file.
+# shellcheck disable=SC2034
 REDIS_CONTAINER="semcache-redis"
 
 if [ -t 1 ]; then
