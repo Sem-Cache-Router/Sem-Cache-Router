@@ -1,0 +1,255 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sem-Cache-Router</title>
+<!--
+  The showcase page. One file, plain JavaScript, no framework and no build step,
+  served by the gateway itself at GET /, so it needs no CORS and nothing extra to
+  start. It only calls endpoints the gateway already has: /v1/chat/completions,
+  /metrics, /health and the admin routes, plus the mock vendor's control endpoints
+  when that is running. Every value from a response is written with textContent,
+  never innerHTML, so an answer can never inject markup into the page.
+-->
+<style>
+  :root {
+    --bg: #f6f7f9; --panel: #ffffff; --text: #1d2330; --dim: #5d6675; --line: #dde1e7;
+    --miss: #c0392b; --exact: #1e8449; --semantic: #2166ac; --error: #7f8c8d;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #0f1115; --panel: #181b21; --text: #e6e9ee; --dim: #9aa3b0; --line: #2b3038; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  main { max-width: 960px; margin: 0 auto; padding: 24px 16px 48px; }
+  h1 { margin: 0 0 4px; font-size: 28px; }
+  h2 { margin: 0 0 12px; font-size: 18px; }
+  p.lead { margin: 0 0 24px; color: var(--dim); }
+  section { background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
+            padding: 16px; margin-bottom: 16px; }
+  form { display: flex; gap: 8px; }
+  input[type=text], input[type=password] { flex: 1; min-width: 0; padding: 8px 10px;
+            border: 1px solid var(--line); border-radius: 6px; background: var(--bg);
+            color: var(--text); font: inherit; }
+  button { padding: 8px 14px; border: 1px solid var(--line); border-radius: 6px;
+           background: var(--bg); color: var(--text); font: inherit; cursor: pointer; }
+  button.primary { background: var(--semantic); border-color: var(--semantic); color: #fff; }
+  .presets { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+  .presets button { font-size: 14px; padding: 4px 10px; }
+  ol#answers { list-style: none; margin: 12px 0 0; padding: 0; }
+  ol#answers li { border-top: 1px solid var(--line); padding: 10px 0; }
+  .q { font-weight: 600; }
+  .meta { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-top: 4px;
+          color: var(--dim); font-size: 14px; }
+  .badge { color: #fff; border-radius: 4px; padding: 1px 8px; font-size: 13px; font-weight: 600; }
+  .badge.miss { background: var(--miss); } .badge.exact_hit { background: var(--exact); }
+  .badge.semantic_hit { background: var(--semantic); } .badge.error { background: var(--error); }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
+  .stat { border: 1px solid var(--line); border-radius: 8px; padding: 10px; }
+  .stat .value { font-size: 24px; font-weight: 700; }
+  .stat .label { color: var(--dim); font-size: 13px; }
+  .dots { display: flex; gap: 20px; }
+  .dot::before { content: ""; display: inline-block; width: 10px; height: 10px; border-radius: 50%;
+                 margin-right: 6px; background: var(--error); }
+  .dot.ok::before { background: var(--exact); } .dot.unreachable::before { background: var(--miss); }
+  .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  footer { color: var(--dim); font-size: 14px; }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Sem-Cache-Router</h1>
+  <p class="lead">A gateway between an app and an LLM provider. It answers a repeated question
+    from Redis in about a millisecond, a reworded one from ChromaDB by meaning, and only asks
+    the provider when neither has an answer. Ask something below and watch where the answer
+    came from.</p>
+
+  <section id="ask">
+    <h2>Ask</h2>
+    <form id="ask-form">
+      <input type="text" id="question" placeholder="Type a question" autocomplete="off" required>
+      <button type="submit" class="primary">Send</button>
+    </form>
+    <div class="presets" id="presets">
+      <button type="button">What is the capital of France?</button>
+      <button type="button">Which city is the capital of France?</button>
+      <button type="button">Is the store open on Sunday?</button>
+      <button type="button">Is the store not open on Sunday?</button>
+    </div>
+    <ol id="answers"></ol>
+  </section>
+
+  <section id="numbers">
+    <h2>Live numbers</h2>
+    <div class="grid" id="stats"></div>
+  </section>
+
+  <section id="health">
+    <h2>Health</h2>
+    <div class="dots">
+      <span class="dot" id="health-redis">Redis</span>
+      <span class="dot" id="health-chroma">Chroma</span>
+    </div>
+  </section>
+
+  <section id="failover" hidden>
+    <h2>Failover</h2>
+    <p class="lead">The provider here is the mock vendor API. Break the primary and ask a new
+      question: the circuit breaker sends it to the secondary and the caller never sees an error.</p>
+    <div class="row">
+      <button type="button" id="break">Break primary</button>
+      <button type="button" id="fix">Fix primary</button>
+      <span id="vendor-calls"></span>
+    </div>
+  </section>
+
+  <section id="admin">
+    <details>
+      <summary>Admin: empty the cache</summary>
+      <div class="row" style="margin-top: 10px">
+        <input type="password" id="admin-key" placeholder="Admin key" autocomplete="off">
+        <button type="button" id="flush">Empty the cache</button>
+      </div>
+      <p id="flush-result"></p>
+    </details>
+  </section>
+
+  <footer id="footer">Answers come from whichever provider the gateway is configured with.</footer>
+</main>
+
+<script>
+  const MOCK = `${location.protocol}//${location.hostname}:8002`;
+  const byId = (id) => document.getElementById(id);
+
+  function element(tag, className, text) {
+    const node = document.createElement(tag);
+    if (className) node.className = className;
+    if (text !== undefined) node.textContent = text;
+    return node;
+  }
+
+  async function ask(question) {
+    const started = performance.now();
+    let status = "error", answer = "", similarity = null;
+    try {
+      const response = await fetch("/v1/chat/completions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Authorization": "Bearer demo" },
+        body: JSON.stringify({ model: "gpt-4o-mini", messages: [{ role: "user", content: question }] }),
+      });
+      const body = await response.json();
+      if (response.ok) {
+        status = body.semcache_status;
+        answer = body.choices[0].message.content;
+        similarity = body.semcache_similarity;
+      } else {
+        answer = `${response.status} ${body.error ? body.error.code : ""}`;
+      }
+    } catch (error) {
+      answer = "no response from the gateway";
+    }
+    const item = element("li");
+    item.append(element("div", "q", question), element("div", "", answer));
+    const meta = element("div", "meta");
+    meta.append(element("span", `badge ${status}`, status.replace("_", " ")),
+                element("span", "", `${Math.round(performance.now() - started)} ms`));
+    if (similarity !== null && similarity !== undefined) {
+      meta.append(element("span", "", `similarity ${similarity.toFixed(3)}`));
+    }
+    item.append(meta);
+    byId("answers").prepend(item);
+    refresh();
+  }
+
+  const STATS = [
+    ["requests_total", "requests", (v) => v],
+    ["hit_ratio", "hit ratio", (v) => v === null ? "-" : `${Math.round(v * 100)}%`],
+    ["tier1_hits", "exact hits (Redis)", (v) => v],
+    ["tier2_hits", "semantic hits (Chroma)", (v) => v],
+    ["misses", "misses (provider)", (v) => v],
+    ["latency_hit_p50_ms", "hit p50", (v) => v === null ? "-" : `${Math.round(v)} ms`],
+    ["latency_miss_p50_ms", "miss p50", (v) => v === null ? "-" : `${Math.round(v)} ms`],
+    ["total_provider_spend_usd", "provider spend", (v) => `$${Number(v).toFixed(6)}`],
+    ["breaker_failovers", "failovers", (v) => v],
+    ["tier2_unavailable", "Chroma outages seen", (v) => v],
+  ];
+
+  async function refresh() {
+    try {
+      const metrics = await (await fetch("/metrics")).json();
+      byId("stats").replaceChildren(...STATS.map(([key, label, show]) => {
+        const stat = element("div", "stat");
+        stat.append(element("div", "value", String(show(metrics[key] ?? null))),
+                    element("div", "label", label));
+        return stat;
+      }));
+      const health = await (await fetch("/health")).json();
+      for (const name of ["redis", "chroma"]) {
+        const state = health.dependencies[name];
+        const dot = byId(`health-${name}`);
+        dot.className = `dot ${state}`;
+        dot.textContent = `${name === "redis" ? "Redis" : "Chroma"}: ${state}`;
+      }
+    } catch (error) {
+      byId("health-redis").textContent = "gateway not answering";
+    }
+    refreshMock();
+  }
+
+  async function refreshMock() {
+    try {
+      const stats = await (await fetch(`${MOCK}/stats`)).json();
+      byId("failover").hidden = false;
+      byId("footer").textContent =
+        "The provider is the mock vendor API: answers, latency and cost are simulated.";
+      byId("vendor-calls").textContent =
+        `provider calls: primary ${stats.openai.calls}, secondary ${stats.anthropic.calls}`;
+    } catch (error) {
+      byId("failover").hidden = true;
+    }
+  }
+
+  async function setPrimary(status) {
+    await fetch(`${MOCK}/control/openai`, {
+      method: "PUT", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status }),
+    });
+    refreshMock();
+  }
+
+  async function flush() {
+    const result = byId("flush-result");
+    const response = await fetch("/admin/cache", {
+      method: "DELETE", headers: { "Authorization": `Bearer ${byId("admin-key").value}` },
+    });
+    if (response.status === 404) {
+      result.textContent = "The admin routes are off: start the gateway with SEMCACHE_ADMIN_API_KEY set.";
+      return;
+    }
+    const body = await response.json();
+    result.textContent = response.ok
+      ? `Removed ${body.tier1_removed} exact and ${body.tier2_removed ?? 0} semantic entries.`
+      : `Refused: ${body.error.code}`;
+    refresh();
+  }
+
+  byId("ask-form").addEventListener("submit", (event) => {
+    event.preventDefault();
+    const question = byId("question").value.trim();
+    if (question) ask(question);
+  });
+  for (const button of byId("presets").querySelectorAll("button")) {
+    button.addEventListener("click", () => ask(button.textContent));
+  }
+  byId("break").addEventListener("click", () => setPrimary(503));
+  byId("fix").addEventListener("click", () => setPrimary(200));
+  byId("flush").addEventListener("click", flush);
+
+  refresh();
+  setInterval(refresh, 2000);
+</script>
+</body>
+</html>
