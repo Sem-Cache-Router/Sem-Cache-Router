@@ -35,6 +35,14 @@ from app.telemetry.metrics import Metrics
 from app.telemetry.tracing import install_tracing
 
 
+def _embedded_chroma() -> Any:
+    """An in memory Chroma inside this process. Clients built here share one store."""
+    import chromadb
+    from chromadb.config import Settings as ChromaSettings
+
+    return chromadb.EphemeralClient(settings=ChromaSettings(anonymized_telemetry=False))
+
+
 def chroma_client_factory(settings: Settings) -> Callable[[], Any]:
     """Return a function that builds a Chroma client from settings.
 
@@ -43,6 +51,9 @@ def chroma_client_factory(settings: Settings) -> Callable[[], Any]:
     a vector store outage. The semantic cache calls this when it first needs a
     connection, and again after each reconnect cooldown.
     """
+    if settings.chroma_embedded:
+        return _embedded_chroma
+
     host, port, ssl = settings.chroma_endpoint
 
     def factory() -> Any:
