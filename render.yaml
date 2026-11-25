@@ -36,8 +36,12 @@ services:
           property: connectionString
       - key: SEMCACHE_PRIMARY_PROVIDER
         value: stub
+      # Off for now. On the free instance's 0.1 CPU the embedding model took
+      # about 290 s to load and 75 to 90 s per new question in a local
+      # simulation, because it starts a thread per host core. It goes back on
+      # once the embedder is limited to one thread; exact hits work either way.
       - key: SEMCACHE_SEMANTIC_CACHE_ENABLED
-        value: "true"
+        value: "false"
       - key: SEMCACHE_CHROMA_EMBEDDED
         value: "true"
       - key: SEMCACHE_ADMIN_API_KEY
