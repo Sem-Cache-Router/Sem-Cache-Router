@@ -1,0 +1,20 @@
+# Keep the build context to what the image needs, and keep secrets out of it.
+.env
+.env.*
+!.env.example
+.git
+.github
+.venv
+venv
+repo-clone
+tests
+benchmarks
+evaluation
+scripts
+*.md
+.coverage
+.mypy_cache
+.pytest_cache
+.ruff_cache
+**/__pycache__
+.c
