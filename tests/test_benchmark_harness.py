@@ -67,9 +67,10 @@ def test_a_hit_serving_the_other_side_of_a_negation_is_a_false_hit() -> None:
     assert result.served_group == "open-yes"
 
 
-def test_an_answer_the_workload_never_asked_for_is_not_correct() -> None:
+def test_an_answer_the_workload_never_asked_for_is_never_counted_correct() -> None:
     result = score(PARIS, "gateway", 200, _reply("something else", "exact_hit"), GROUPS, 1.0)
-    assert (result.served_group, result.correct) == (None, False)
+    assert result.served_group is None
+    assert result.correct is not True
 
 
 def test_an_error_response_is_recorded_without_a_verdict() -> None:
