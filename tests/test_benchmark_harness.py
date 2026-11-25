@@ -67,9 +67,27 @@ def test_a_hit_serving_the_other_side_of_a_negation_is_a_false_hit() -> None:
     assert result.served_group == "open-yes"
 
 
-def test_an_answer_the_workload_never_asked_for_is_not_correct() -> None:
+def test_an_answer_whose_origin_is_unknown_is_unscored_not_wrong() -> None:
     result = score(PARIS, "gateway", 200, _reply("something else", "exact_hit"), GROUPS, 1.0)
-    assert (result.served_group, result.correct) == (None, False)
+    assert (result.served_group, result.correct) == (None, None)
+
+
+def _real(answer: str, status: str | None = None) -> dict[str, Any]:
+    body: dict[str, Any] = {"choices": [{"message": {"content": answer}}], "usage": USAGE}
+    if status is not None:
+        body["semcache_status"] = status
+    return body
+
+
+def test_a_real_answer_is_traced_back_through_the_answers_given_this_run() -> None:
+    origins = {"Paris is the capital.": PARIS.prompt, "Yes, until 6 pm.": OPEN.prompt}
+    right = score(PARIS_2, "gateway", 200, _real("Paris is the capital.", "semantic_hit"),
+                  GROUPS, 12.0, origins)
+    wrong = score(CLOSED, "gateway", 200, _real("Yes, until 6 pm.", "semantic_hit"),
+                  GROUPS, 12.0, origins)
+    assert (right.served_group, right.correct) == ("paris", True)
+    assert (wrong.served_group, wrong.correct) == ("open-yes", False)
+    assert right.answer == "Paris is the capital."
 
 
 def test_an_error_response_is_recorded_without_a_verdict() -> None:
@@ -119,6 +137,18 @@ def test_summarise_puts_false_hits_next_to_the_hit_ratio() -> None:
     assert summary["latency_ms"]["hit_p50"] == 13.0
 
 
+def test_unscored_hits_are_counted_apart_and_left_out_of_the_false_hit_rate() -> None:
+    results = [
+        _result(PARIS_2, "semantic_hit", True, 13.0),
+        _result(CLOSED, "semantic_hit", False, 14.0),
+        _result(OPEN, "exact_hit", None, 1.0),
+    ]
+    summary = summarise(results)
+    assert summary["hit_ratio"] == 1.0
+    assert summary["unscored_hits"] == 1
+    assert summary["false_hit_rate"] == pytest.approx(1 / 2)
+
+
 def test_summarise_an_empty_run_has_no_rates() -> None:
     summary = summarise([])
     assert (summary["hit_ratio"], summary["false_hit_rate"]) == (None, None)
@@ -147,6 +177,43 @@ async def test_run_sends_each_prompt_in_order_and_scores_it() -> None:
     assert sent == [item.prompt for item in order]
     assert [r.correct for r in results] == [True, False, True]
     assert all(r.latency_ms >= 0 for r in results)
+
+
+async def test_run_scores_a_real_model_by_remembering_its_answers() -> None:
+    bodies: list[dict[str, Any]] = []
+    stored: dict[str, str] = {}
+
+    def gateway(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content)
+        bodies.append(body)
+        prompt = body["messages"][-1]["content"]
+        key = "store" if "store" in prompt else ("paris" if "France" in prompt else prompt)
+        if key in stored:
+            return httpx.Response(200, json=_real(stored[key], "semantic_hit"))
+        stored[key] = f"A real answer about {key} ({len(stored)})."
+        return httpx.Response(200, json=_real(stored[key], "miss"))
+
+    order = [OPEN, CLOSED, PARIS, PARIS_2]
+    async with httpx.AsyncClient(transport=httpx.MockTransport(gateway)) as client:
+        results = await harness.run(order, client, "http://gw/v1", "gateway", GROUPS,
+                                    model="qwen2.5:7b", max_tokens=64)
+
+    assert [r.correct for r in results] == [True, False, True, True]
+    assert {b["model"] for b in bodies} == {"qwen2.5:7b"}
+    assert {b["max_tokens"] for b in bodies} == {64}
+
+
+async def test_without_max_tokens_none_is_sent() -> None:
+    sent: list[dict[str, Any]] = []
+
+    def vendor(request: httpx.Request) -> httpx.Response:
+        sent.append(json.loads(request.content))
+        return httpx.Response(200, json=_reply(PARIS.prompt))
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(vendor)) as client:
+        await harness.run([PARIS], client, "http://v/v1", "direct", GROUPS)
+    assert "max_tokens" not in sent[0]
+    assert sent[0]["model"] == "gpt-4o-mini"
 
 
 async def test_run_records_a_failed_request_instead_of_raising() -> None:
@@ -190,6 +257,32 @@ async def test_main_writes_a_labelled_simulated_record(
 
     record = json.loads(out.read_text())
     assert (record["mode"], record["simulated"], record["label"]) == ("direct", True, "direct")
+    assert record["provider"] == "mock"
+    assert "simulated" in record["note"]
     assert record["summary"]["errors"] == 0
     assert record["summary"]["provider_calls"] == record["summary"]["requests"]
     assert record["summary"]["hit_ratio"] == 0.0
+
+
+async def test_a_run_against_a_real_model_is_not_labelled_simulated(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def vendor(request: httpx.Request) -> httpx.Response:
+        prompt = json.loads(request.content)["messages"][-1]["content"]
+        return httpx.Response(200, json=_real(f"An answer to {prompt}"))
+
+    real_client = httpx.AsyncClient
+    monkeypatch.setattr(harness.httpx, "AsyncClient",
+                        lambda **kwargs: real_client(transport=httpx.MockTransport(vendor)))
+    out = tmp_path / "real.json"
+    await harness._main(harness.parse_args([
+        "--label", "direct", "--out", str(out), "--direct", "http://ollama/v1",
+        "--provider", "ollama qwen2.5:7b", "--model", "qwen2.5:7b", "--max-tokens", "64",
+    ]))
+    record = json.loads(out.read_text())
+    assert record["simulated"] is False
+    assert (record["provider"], record["model"], record["max_tokens"]) == (
+        "ollama qwen2.5:7b", "qwen2.5:7b", 64,
+    )
+    assert "latency is real" in record["note"]
+    assert record["summary"]["errors"] == 0

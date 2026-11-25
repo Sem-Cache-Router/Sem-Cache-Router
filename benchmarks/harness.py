@@ -8,12 +8,19 @@
 #   summarise(), hit ratio per tier, false hits, provider calls, cost, latency
 #   a command line entrypoint that writes one run to a JSON file
 #
-# How correctness is scored without a judge model: the mock vendor answers every
-# prompt with "Mock answer to: <prompt>". The harness reads back which prompt an
-# answer was produced for and looks up that prompt's group in the workload. A hit
-# serving an answer produced for a prompt of another group is a false hit. That
-# only holds against the mock, which is what every run here is pointed at; the
-# output says so.
+# How correctness is scored without a judge model: the harness works out which
+# prompt a served answer was originally produced for, and looks up that prompt's
+# group in the workload. A hit serving an answer produced for a prompt of another
+# group is a false hit. Against the mock vendor the prompt is in the answer
+# itself ("Mock answer to: <prompt>"). Against a real model, the harness
+# remembers every answer the provider gave during the run and which prompt it
+# was for; a cached answer is the same text, so it maps back. A hit whose origin
+# cannot be found is counted as unscored, never as right or wrong.
+#
+# The provider is recorded with every run. Only a run against the mock is
+# marked simulated; against a real model the latency is real, and the cost is
+# what the tokens would cost at the gateway's gpt-4o-mini rates, which the
+# output says.
 #
 # Threshold is not set here. It is a gateway setting, so a sweep restarts the
 # gateway for each threshold (scripts/run-benchmark.sh) and labels each run.
@@ -62,6 +69,7 @@ class RequestResult:
     served_group: str | None
     correct: bool | None
     cost_usd: float
+    answer: str | None = None
 
 
 def served_prompt(answer: str) -> str | None:
@@ -79,18 +87,24 @@ def price(usage: dict[str, Any]) -> float:
 
 def score(
     item: WorkloadItem, mode: Mode, http_status: int, body: dict[str, Any], groups: dict[str, str],
-    latency_ms: float,
+    latency_ms: float, origins: dict[str, str] | None = None,
 ) -> RequestResult:
-    """Turn one response into a result, scoring the answer against the item's group."""
+    """Turn one response into a result, scoring the answer against the item's group.
+
+    origins maps answers a real provider gave during this run to the prompt each
+    was for; the mock needs none, since its answers name their prompt.
+    """
     if http_status != 200:
         return RequestResult(item.id, item.group, item.kind, http_status, None, None,
                              latency_ms, None, None, 0.0)
     answer = body["choices"][0]["message"]["content"]
-    origin = served_prompt(answer)
-    served_group = groups.get(origin) if origin is not None else None
     cache_status = "direct" if mode == "direct" else body.get("semcache_status")
     # A reply the gateway fetched from the provider is paid for; a hit is free.
     paid = mode == "direct" or cache_status == "miss"
+    # A paid reply is the provider answering this very prompt. The mock's answer
+    # still names its prompt, which keeps the check honest against it.
+    origin = served_prompt(answer) or (origins or {}).get(answer) or (item.prompt if paid else None)
+    served_group = groups.get(origin) if origin is not None else None
     return RequestResult(
         item_id=item.id,
         group=item.group,
@@ -100,30 +114,41 @@ def score(
         similarity=body.get("semcache_similarity"),
         latency_ms=latency_ms,
         served_group=served_group,
-        correct=served_group == item.group,
+        correct=None if served_group is None else served_group == item.group,
         cost_usd=price(body.get("usage") or {}) if paid else 0.0,
+        answer=answer,
     )
 
 
 async def run(
     order: list[WorkloadItem], client: httpx.AsyncClient, url: str, mode: Mode,
-    groups: dict[str, str], api_key: str = "bench-key",
+    groups: dict[str, str], api_key: str = "bench-key", model: str = MODEL,
+    max_tokens: int | None = None,
 ) -> list[RequestResult]:
     """Send every prompt in order, one at a time, and score each answer.
 
     Sequential on purpose: the order decides which member of a group is stored
     first, and concurrency would make that, and so every hit, depend on timing.
+    Every answer the provider itself gave is remembered against its prompt, so a
+    later hit serving that text can be traced back to it.
     """
     endpoint = f"{url.rstrip('/')}/chat/completions"
     headers = {"Authorization": f"Bearer {api_key}"}
+    origins: dict[str, str] = {}
     results = []
     for item in order:
-        body = {"model": MODEL, "messages": [{"role": "user", "content": item.prompt}]}
+        message = {"role": "user", "content": item.prompt}
+        body: dict[str, Any] = {"model": model, "messages": [message]}
+        if max_tokens is not None:
+            body["max_tokens"] = max_tokens
         started = time.perf_counter()
         response = await client.post(endpoint, json=body, headers=headers)
         latency_ms = (time.perf_counter() - started) * 1000
         payload = response.json() if response.status_code == 200 else {}
-        results.append(score(item, mode, response.status_code, payload, groups, latency_ms))
+        result = score(item, mode, response.status_code, payload, groups, latency_ms, origins)
+        if result.cache_status in ("miss", "direct") and result.answer:
+            origins.setdefault(result.answer, item.prompt)
+        results.append(result)
     return results
 
 
@@ -145,16 +170,18 @@ def summarise(results: list[RequestResult]) -> dict[str, Any]:
     statuses = Counter(r.cache_status for r in ok)
     hits = [r for r in ok if r.cache_status in HIT_STATUSES]
     paid = [r for r in ok if r.cache_status not in HIT_STATUSES]
-    false_hits = [r for r in hits if not r.correct]
+    scored = [r for r in hits if r.correct is not None]
+    false_hits = [r for r in scored if not r.correct]
     false_by_kind = Counter(r.kind for r in false_hits)
-    hits_by_kind = Counter(r.kind for r in hits)
+    hits_by_kind = Counter(r.kind for r in scored)
     return {
         "requests": len(results),
         "errors": len(results) - len(ok),
         "statuses": dict(statuses),
         "hit_ratio": _rate(len(hits), len(ok)),
         "false_hits": len(false_hits),
-        "false_hit_rate": _rate(len(false_hits), len(hits)),
+        "false_hit_rate": _rate(len(false_hits), len(scored)),
+        "unscored_hits": len(hits) - len(scored),
         "false_hit_rate_by_kind": {
             kind: _rate(false_by_kind[kind], count) for kind, count in sorted(hits_by_kind.items())
         },
@@ -187,14 +214,24 @@ async def _main(args: argparse.Namespace) -> None:
     order = replay_order(items, repeats=args.repeats, seed=args.seed)
     mode: Mode = "direct" if args.direct else "gateway"
     url = args.direct or f"{args.gateway.rstrip('/')}/v1"
-    async with httpx.AsyncClient(timeout=60.0) as client:
-        results = await run(order, client, url, mode, groups)
+    async with httpx.AsyncClient(timeout=args.timeout) as client:
+        results = await run(order, client, url, mode, groups, model=args.model,
+                            max_tokens=args.max_tokens)
+    simulated = args.provider == "mock"
     record = {
         "label": args.label,
         "mode": mode,
         "threshold": args.threshold,
-        "simulated": True,
-        "note": "Run against the mock vendor API: latency and cost are simulated.",
+        "provider": args.provider,
+        "model": args.model,
+        "max_tokens": args.max_tokens,
+        "simulated": simulated,
+        "note": (
+            "Run against the mock vendor API: latency and cost are simulated."
+            if simulated else
+            f"Run against {args.provider}: latency is real; cost is the tokens priced at "
+            "the gateway's gpt-4o-mini rates."
+        ),
         "commit": git_commit(),
         "seed": args.seed,
         "repeats": args.repeats,
@@ -217,6 +254,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--direct", help="vendor base URL, e.g. http://localhost:8002/v1; "
                         "skips the gateway for the no cache baseline")
     parser.add_argument("--threshold", type=float, help="the gateway's threshold, recorded only")
+    parser.add_argument("--provider", default="mock",
+                        help="what answered, recorded: 'mock', or e.g. 'ollama qwen2.5:7b'")
+    parser.add_argument("--model", default=MODEL, help="model name sent with every request")
+    parser.add_argument("--max-tokens", type=int, help="cap on each answer's length")
+    parser.add_argument("--timeout", type=float, default=60.0, help="seconds per request")
     parser.add_argument("--repeats", type=int, default=1)
     parser.add_argument("--seed", type=int, default=DEFAULT_SEED)
     parser.add_argument("--workload", type=Path, default=DEFAULT_PATH)
