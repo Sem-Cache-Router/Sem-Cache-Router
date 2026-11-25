@@ -35,7 +35,7 @@ from typing import Any
 
 from redis.asyncio import Redis
 
-from app.cache.keys import make_key
+from app.cache.keys import EXACT_PREFIX, make_key
 from app.models import CacheEntry, Message
 
 
@@ -173,3 +173,22 @@ class ExactCache:
         """
         removed: int = await self._redis.delete(self._key(model, messages))
         return removed > 0
+
+    async def count(self) -> int:
+        """How many Tier 1 entries exist. Walks the keyspace with SCAN, never KEYS."""
+        return sum([1 async for _ in self._redis.scan_iter(match=f"{EXACT_PREFIX}*", count=500)])
+
+    async def clear(self) -> int:
+        """Delete every Tier 1 entry and return how many went.
+
+        Only keys under the gateway's own prefix are touched, so the limiter's
+        buckets and anything else sharing the Redis survive a flush. The keys are
+        collected before any is deleted: deleting while SCAN is still walking the
+        keyspace can move the keys it has not reached past its cursor, and a test
+        against fakeredis lost 250 of 1,203 that way.
+        """
+        keys = [key async for key in self._redis.scan_iter(match=f"{EXACT_PREFIX}*", count=500)]
+        removed = 0
+        for start in range(0, len(keys), 500):
+            removed += await self._redis.delete(*keys[start:start + 500])
+        return removed
