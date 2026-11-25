@@ -20,10 +20,19 @@
 # through the ONNX runtime that chromadb already ships, because sentence-
 # transformers pulls in torch and fifteen nvidia CUDA packages to do the same job
 # on a CPU. The output is the same 384 wide, unit length vector.
+#
+# Why recent embeddings are kept: a miss embeds its prompt twice, once to search
+# Tier 2 and once to store the answer, and popular rewordings arrive many times.
+# Under load the embedder is the bottleneck: on the machine this was measured on,
+# one embedding took 19 ms and fifty concurrent ones took 776 ms, with no parallel
+# speedup. So the last few hundred vectors are kept, and a prompt already being
+# embedded is waited on rather than embedded a second time.
 
 from __future__ import annotations
 
 import asyncio
+from array import array
+from collections import OrderedDict
 from collections.abc import Callable, Sequence
 from typing import Protocol
 
@@ -73,7 +82,13 @@ def _load_onnx_minilm() -> EncodeFn:
 class OnnxEmbedder:
     """all-MiniLM-L6-v2 through the ONNX runtime, run off the event loop."""
 
-    def __init__(self, model_name: str, loader: Callable[[], EncodeFn] = _load_onnx_minilm) -> None:
+    def __init__(
+        self,
+        model_name: str,
+        loader: Callable[[], EncodeFn] = _load_onnx_minilm,
+        *,
+        cache_size: int = 1024,
+    ) -> None:
         """Record the model and how to load it; nothing is loaded here.
 
         Only one model is supported. A different name fails at construction,
@@ -82,13 +97,22 @@ class OnnxEmbedder:
 
         The loader is injectable so tests can exercise this class without the
         weights, which are a 79 MB download.
+
+        cache_size is how many recent vectors to keep, or 0 to keep none. A
+        vector is kept as an array of doubles, about 3 KB, so the default holds
+        roughly 3 MB.
         """
         if model_name != SUPPORTED_MODEL:
             raise ValueError(
                 f"unsupported embedding model {model_name!r}; only {SUPPORTED_MODEL} is available"
             )
+        if cache_size < 0:
+            raise ValueError("cache_size cannot be negative")
         self._loader = loader
         self._encode: EncodeFn | None = None
+        self._cache_size = cache_size
+        self._cache: OrderedDict[str, array[float]] = OrderedDict()
+        self._pending: dict[str, asyncio.Future[array[float]]] = {}
 
     def load(self) -> None:
         """Load the weights and run one warm up embedding.
@@ -118,8 +142,27 @@ class OnnxEmbedder:
         other request for the length of a Tier 2 lookup, which under load looks
         exactly like slow vector search and would be diagnosed as that.
         """
-        encode = self._encode
-        if encode is None:
+        if self._encode is None:
             raise RuntimeError("embedder used before load()")
-        vectors = await asyncio.to_thread(encode, [text])
-        return [float(value) for value in vectors[0]]
+        cached = self._cache.get(text)
+        if cached is not None:
+            self._cache.move_to_end(text)
+            return list(cached)
+        pending = self._pending.get(text)
+        if pending is None:
+            pending = asyncio.ensure_future(self._embed(text))
+            self._pending[text] = pending
+            pending.add_done_callback(lambda _: self._pending.pop(text, None))
+        # Shielded, so a caller that gives up (the semantic cache times its calls
+        # out) does not cancel the embedding for the others waiting on it.
+        return list(await asyncio.shield(pending))
+
+    async def _embed(self, text: str) -> array[float]:
+        """Run the model on one prompt and remember the result."""
+        assert self._encode is not None
+        vectors = await asyncio.to_thread(self._encode, [text])
+        vector = array("d", (float(value) for value in vectors[0]))
+        self._cache[text] = vector
+        if len(self._cache) > self._cache_size:
+            self._cache.popitem(last=False)
+        return vector
