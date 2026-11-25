@@ -93,6 +93,12 @@ class Settings(BaseSettings):
     # for anyone running it locally on the stub provider. Compose turns it on.
     semantic_cache_enabled: bool = False
 
+    # Refuse a semantic hit when the cached prompt and the new one disagree on
+    # negation ("open" against "not open"), which the embedding model scores as
+    # near identical. Off by default: it trades some correct hits for provider
+    # calls, and the benchmark measures both sides. See app/cache/negation_guard.py.
+    semantic_negation_guard: bool = False
+
     # How often expired Tier 2 entries are deleted, in seconds, or 0 to never.
     # Expired entries are never served either way, because every query filters
     # them out; this only reclaims the space, so a long interval costs storage
