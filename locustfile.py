@@ -5,8 +5,14 @@
 #   paraphrases, rewordings of a few questions (Tier 2 once one of them is stored)
 #   fresh prompts, unique every time, so they always reach the provider
 #
+# Before the users start, each repeat prompt is asked once, so the paraphrases
+# meet a stored question and Tier 2 is measured. Started cold, fifty users ask
+# everything at once, most paraphrases miss and are then stored in Tier 1, and
+# the run measured three semantic hits in one attempt and 173 in another.
+#
 # What it checks, at the end of the run:
-#   end to end p95 for exact hits and for semantic hits, against budgets
+#   end to end p95 for exact hits and for semantic hits, against budgets, on at
+#   least MIN_SAMPLES of each; fewer is reported as a failure, not a pass
 #   queue growth: p95 of the hits in the last third of the run against the
 #   first third. A server that keeps up holds steady; one that falls behind
 #   gets slower as the queue builds, whatever its average looks like
@@ -25,10 +31,12 @@
 
 from __future__ import annotations
 
+import json
 import math
 import os
 import random
 import time
+import urllib.request
 from collections import defaultdict
 from typing import Any
 
@@ -58,6 +66,7 @@ BUDGETS_MS = {
     "semantic_hit": float(os.environ.get("LOAD_SEMANTIC_P95_MS", "150")),
 }
 MAX_GROWTH = float(os.environ.get("LOAD_MAX_GROWTH", "1.5"))
+MIN_SAMPLES = int(os.environ.get("LOAD_MIN_SAMPLES", "30"))
 HEADERS = {"Authorization": "Bearer load-test-key"}
 
 # Fresh prompts are six random words from this list. A template with a counter in
@@ -99,6 +108,19 @@ class GatewayUser(HttpUser):
         self._ask(" ".join(random.sample(WORDS, 6)) + "?", "fresh")
 
 
+@events.test_start.add_listener
+def _warm(environment: Any, **kwargs: Any) -> None:
+    """Ask each repeat prompt once, in turn, so the run starts with them stored."""
+    for prompt in REPEATS:
+        request = urllib.request.Request(
+            f"{environment.host}/v1/chat/completions",
+            data=json.dumps(_body(prompt)).encode(),
+            headers={**HEADERS, "Content-Type": "application/json"},
+        )
+        with urllib.request.urlopen(request, timeout=30) as response:
+            response.read()
+
+
 @events.request.add_listener
 def _record(response_time: float, response: Any, exception: Any, **kwargs: Any) -> None:
     """Keep each successful request's latency under the cache status the gateway reported."""
@@ -136,9 +158,10 @@ def verdict(samples: dict[str, list[tuple[float, float]]], failures: int) -> lis
     if failures:
         problems.append(f"{failures} requests failed")
     for status, budget in BUDGETS_MS.items():
-        measured = p95([latency for _, latency in samples.get(status, [])])
-        if measured is None:
-            problems.append(f"no {status} was measured")
+        latencies = [latency for _, latency in samples.get(status, [])]
+        measured = p95(latencies)
+        if measured is None or len(latencies) < MIN_SAMPLES:
+            problems.append(f"only {len(latencies)} {status} measured, fewer than {MIN_SAMPLES}")
         elif measured > budget:
             problems.append(f"{status} p95 {measured:.0f} ms is over its {budget:.0f} ms budget")
     hits = samples.get("exact_hit", []) + samples.get("semantic_hit", [])
