@@ -16,6 +16,7 @@
   :root {
     --bg: #f6f7f9; --panel: #ffffff; --text: #1d2330; --dim: #5d6675; --line: #dde1e7;
     --miss: #c0392b; --exact: #1e8449; --semantic: #2166ac; --error: #7f8c8d;
+    --nav-h: 48px;
   }
   @media (prefers-color-scheme: dark) {
     :root { --bg: #0f1115; --panel: #181b21; --text: #e6e9ee; --dim: #9aa3b0; --line: #2b3038; }
@@ -23,16 +24,51 @@
   * { box-sizing: border-box; }
   body { margin: 0; background: var(--bg); color: var(--text);
          font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
-  main { max-width: 960px; margin: 0 auto; padding: 24px 16px 48px; }
+
+  /* ── top nav ──────────────────────────────────────────────── */
+  nav {
+    position: sticky; top: 0; z-index: 10;
+    background: var(--panel); border-bottom: 1px solid var(--line);
+    height: var(--nav-h);
+    display: flex; align-items: center; justify-content: center;
+  }
+  .health-row { display: flex; gap: 20px; align-items: center; }
+  .dot { font-size: 14px; display: flex; align-items: center; gap: 6px; }
+  .dot::before { content: ""; display: inline-block; width: 9px; height: 9px;
+                  border-radius: 50%; background: var(--error); flex-shrink: 0; }
+  .dot.ok::before         { background: var(--exact); }
+  .dot.unreachable::before { background: var(--miss); }
+  .dot.disabled::before   { background: var(--dim); }
+
+  /* ── page shell: two columns ─────────────────────────────── */
+  .page {
+    max-width: 1140px; margin: 0 auto;
+    display: grid;
+    /* center col takes remaining space; sidebar is fixed 220px */
+    grid-template-columns: 1fr 220px;
+    gap: 20px;
+    padding: 28px 16px 48px;
+    align-items: start;
+  }
+
+  /* ── center column ───────────────────────────────────────── */
+  .center {
+    display: flex; flex-direction: column; gap: 16px;
+  }
+  .hero { text-align: center; }
   h1 { margin: 0 0 4px; font-size: 28px; }
-  h2 { margin: 0 0 12px; font-size: 18px; }
-  p.lead { margin: 0 0 24px; color: var(--dim); }
-  section { background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
-            padding: 16px; margin-bottom: 16px; }
+  p.lead { margin: 0; color: var(--dim); font-size: 15px; }
+
+  section { background: var(--panel); border: 1px solid var(--line);
+            border-radius: 10px; padding: 16px; }
+  h2 { margin: 0 0 12px; font-size: 17px; }
+
   form { display: flex; gap: 8px; }
-  input[type=text], input[type=password] { flex: 1; min-width: 0; padding: 8px 10px;
-            border: 1px solid var(--line); border-radius: 6px; background: var(--bg);
-            color: var(--text); font: inherit; }
+  input[type=text], input[type=password] {
+    flex: 1; min-width: 0; padding: 8px 10px;
+    border: 1px solid var(--line); border-radius: 6px;
+    background: var(--bg); color: var(--text); font: inherit;
+  }
   button { padding: 8px 14px; border: 1px solid var(--line); border-radius: 6px;
            background: var(--bg); color: var(--text); font: inherit; cursor: pointer; }
   button.primary { background: var(--semantic); border-color: var(--semantic); color: #fff; }
@@ -41,84 +77,139 @@
   ol#answers { list-style: none; margin: 12px 0 0; padding: 0; }
   ol#answers li { border-top: 1px solid var(--line); padding: 10px 0; }
   .q { font-weight: 600; }
-  .meta { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-top: 4px;
-          color: var(--dim); font-size: 14px; }
-  .badge { color: #fff; border-radius: 4px; padding: 1px 8px; font-size: 13px; font-weight: 600; }
-  .badge.miss { background: var(--miss); } .badge.exact_hit { background: var(--exact); }
-  .badge.semantic_hit { background: var(--semantic); } .badge.error { background: var(--error); }
-  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
-  .stat { border: 1px solid var(--line); border-radius: 8px; padding: 10px; }
-  .stat .value { font-size: 24px; font-weight: 700; }
-  .stat .label { color: var(--dim); font-size: 13px; }
-  .dots { display: flex; gap: 20px; }
-  .dot::before { content: ""; display: inline-block; width: 10px; height: 10px; border-radius: 50%;
-                 margin-right: 6px; background: var(--error); }
-  .dot.ok::before { background: var(--exact); } .dot.unreachable::before { background: var(--miss); }
+  .meta { display: flex; flex-wrap: wrap; gap: 10px; align-items: center;
+          margin-top: 4px; color: var(--dim); font-size: 14px; }
+  .badge { color: #fff; border-radius: 4px; padding: 1px 8px;
+           font-size: 13px; font-weight: 600; }
+  .badge.miss          { background: var(--miss); }
+  .badge.exact_hit     { background: var(--exact); }
+  .badge.semantic_hit  { background: var(--semantic); }
+  .badge.error         { background: var(--error); }
+
   .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
-  footer { color: var(--dim); font-size: 14px; }
+  footer { color: var(--dim); font-size: 13px; text-align: center; }
   [hidden] { display: none !important; }
+
+  /* ── right sidebar: city-block analytics ─────────────────── */
+  /*
+    "City blocks" = compact stat tiles in a tight 2-column grid.
+    The sidebar is position:sticky so it stays in view while the
+    user scrolls the chat, but top offset lets it start below the nav.
+    max-height keeps it from exceeding the logo area (roughly the
+    top quarter of the viewport).
+  */
+  .sidebar {
+    position: sticky;
+    top: calc(var(--nav-h) + 12px);
+    display: flex; flex-direction: column; gap: 10px;
+    /* cap height so it stays within the logo/header zone */
+    max-height: 42vh;
+    overflow: hidden;
+  }
+  .sidebar-label {
+    font-size: 11px; font-weight: 700; letter-spacing: .06em;
+    text-transform: uppercase; color: var(--dim);
+    margin: 0;
+  }
+  .blocks {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 6px;
+  }
+  .block {
+    background: var(--panel); border: 1px solid var(--line);
+    border-radius: 7px; padding: 8px 10px;
+    display: flex; flex-direction: column; gap: 2px;
+    min-width: 0;
+  }
+  .block .bval {
+    font-size: 18px; font-weight: 700; line-height: 1.1;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .block .blbl {
+    font-size: 11px; color: var(--dim); line-height: 1.2;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+
+  /* collapse to single column on narrow screens */
+  @media (max-width: 680px) {
+    .page { grid-template-columns: 1fr; }
+    .sidebar { position: static; max-height: none; }
+  }
 </style>
 </head>
 <body>
-<main>
-  <h1>Sem-Cache-Router</h1>
-  <p class="lead">A gateway between an app and an LLM provider. It answers a repeated question
-    from Redis in about a millisecond, a reworded one from ChromaDB by meaning, and only asks
-    the provider when neither has an answer. Ask something below and watch where the answer
-    came from.</p>
 
-  <section id="ask">
-    <h2>Ask</h2>
-    <form id="ask-form">
-      <input type="text" id="question" placeholder="Type a question" autocomplete="off" required>
-      <button type="submit" class="primary">Send</button>
-    </form>
-    <div class="presets" id="presets">
-      <button type="button">What is the capital of France?</button>
-      <button type="button">Which city is the capital of France?</button>
-      <button type="button">Is the store open on Sunday?</button>
-      <button type="button">Is the store not open on Sunday?</button>
+<!-- ── health nav bar (centered) ──────────────────────── -->
+<nav id="health">
+  <div class="health-row">
+    <span class="dot" id="health-redis">Redis</span>
+    <span class="dot" id="health-chroma">Chroma</span>
+  </div>
+</nav>
+
+<div class="page">
+
+  <!-- ── center column ──────────────────────────────────── -->
+  <main class="center">
+
+    <!-- title + subtitle, centered -->
+    <div class="hero">
+      <h1>Sem-Cache-Router</h1>
+      <p class="lead">A gateway between an app and an LLM provider. It answers a repeated question
+        from Redis in about a millisecond, a reworded one from ChromaDB by meaning, and only asks
+        the provider when neither has an answer. Ask something below and watch where the answer
+        came from.</p>
     </div>
-    <ol id="answers"></ol>
-  </section>
 
-  <section id="numbers">
-    <h2>Live numbers</h2>
-    <div class="grid" id="stats"></div>
-  </section>
-
-  <section id="health">
-    <h2>Health</h2>
-    <div class="dots">
-      <span class="dot" id="health-redis">Redis</span>
-      <span class="dot" id="health-chroma">Chroma</span>
-    </div>
-  </section>
-
-  <section id="failover" hidden>
-    <h2>Failover</h2>
-    <p class="lead">The provider here is the mock vendor API. Break the primary and ask a new
-      question: the circuit breaker sends it to the secondary and the caller never sees an error.</p>
-    <div class="row">
-      <button type="button" id="break">Break primary</button>
-      <button type="button" id="fix">Fix primary</button>
-      <span id="vendor-calls"></span>
-    </div>
-  </section>
-
-  <section id="admin">
-    <details>
-      <summary>Admin: empty the cache</summary>
-      <div class="row" style="margin-top: 10px">
-        <input type="password" id="admin-key" placeholder="Admin key" autocomplete="off">
-        <button type="button" id="flush">Empty the cache</button>
+    <!-- ask / chat -->
+    <section id="ask">
+      <h2>Ask</h2>
+      <form id="ask-form">
+        <input type="text" id="question" placeholder="Type a question" autocomplete="off" required>
+        <button type="submit" class="primary">Send</button>
+      </form>
+      <div class="presets" id="presets">
+        <button type="button">What is the capital of France?</button>
+        <button type="button">Which city is the capital of France?</button>
+        <button type="button">Is the store open on Sunday?</button>
+        <button type="button">Is the store not open on Sunday?</button>
       </div>
-      <p id="flush-result"></p>
-    </details>
-  </section>
+      <ol id="answers"></ol>
+    </section>
 
-  <footer id="footer">Answers come from whichever provider the gateway is configured with.</footer>
-</main>
+    <!-- failover controls (shown only when mock vendor is up) -->
+    <section id="failover" hidden>
+      <h2>Failover</h2>
+      <p class="lead">The provider here is the mock vendor API. Break the primary and ask a new
+        question: the circuit breaker sends it to the secondary and the caller never sees an error.</p>
+      <div class="row">
+        <button type="button" id="break">Break primary</button>
+        <button type="button" id="fix">Fix primary</button>
+        <span id="vendor-calls"></span>
+      </div>
+    </section>
+
+    <!-- admin -->
+    <section id="admin">
+      <details>
+        <summary>Admin: empty the cache</summary>
+        <div class="row" style="margin-top: 10px">
+          <input type="password" id="admin-key" placeholder="Admin key" autocomplete="off">
+          <button type="button" id="flush">Empty the cache</button>
+        </div>
+        <p id="flush-result"></p>
+      </details>
+    </section>
+
+    <footer id="footer">Answers come from whichever provider the gateway is configured with.</footer>
+  </main>
+
+  <!-- ── right sidebar: city-block analytics ────────────── -->
+  <aside class="sidebar" id="numbers">
+    <p class="sidebar-label">Live analytics</p>
+    <div class="blocks" id="stats"></div>
+  </aside>
+
+</div>
 
 <script>
   const MOCK = `${location.protocol}//${location.hostname}:8002`;
@@ -164,27 +255,28 @@
     refresh();
   }
 
+  /* city-block stat definitions ──────────────────────────── */
   const STATS = [
-    ["requests_total", "requests", (v) => v],
-    ["hit_ratio", "hit ratio", (v) => v === null ? "-" : `${Math.round(v * 100)}%`],
-    ["tier1_hits", "exact hits (Redis)", (v) => v],
-    ["tier2_hits", "semantic hits (Chroma)", (v) => v],
-    ["misses", "misses (provider)", (v) => v],
-    ["latency_hit_p50_ms", "hit p50", (v) => v === null ? "-" : `${Math.round(v)} ms`],
-    ["latency_miss_p50_ms", "miss p50", (v) => v === null ? "-" : `${Math.round(v)} ms`],
-    ["total_provider_spend_usd", "provider spend", (v) => `$${Number(v).toFixed(6)}`],
-    ["breaker_failovers", "failovers", (v) => v],
-    ["tier2_unavailable", "Chroma outages seen", (v) => v],
+    ["requests_total",         "requests",           (v) => v ?? "-"],
+    ["hit_ratio",              "hit ratio",          (v) => v === null ? "-" : `${Math.round(v * 100)}%`],
+    ["tier1_hits",             "exact (Redis)",      (v) => v ?? "-"],
+    ["tier2_hits",             "semantic (Chroma)",  (v) => v ?? "-"],
+    ["misses",                 "misses",             (v) => v ?? "-"],
+    ["latency_hit_p50_ms",     "hit p50",            (v) => v === null ? "-" : `${Math.round(v)} ms`],
+    ["latency_miss_p50_ms",    "miss p50",           (v) => v === null ? "-" : `${Math.round(v)} ms`],
+    ["total_provider_spend_usd","spend",             (v) => `$${Number(v).toFixed(4)}`],
+    ["breaker_failovers",      "failovers",          (v) => v ?? "-"],
+    ["tier2_unavailable",      "Chroma outages",     (v) => v ?? "-"],
   ];
 
   async function refresh() {
     try {
       const metrics = await (await fetch("/metrics")).json();
       byId("stats").replaceChildren(...STATS.map(([key, label, show]) => {
-        const stat = element("div", "stat");
-        stat.append(element("div", "value", String(show(metrics[key] ?? null))),
-                    element("div", "label", label));
-        return stat;
+        const block = element("div", "block");
+        block.append(element("div", "bval", String(show(metrics[key] ?? null))),
+                     element("div", "blbl", label));
+        return block;
       }));
       const health = await (await fetch("/health")).json();
       for (const name of ["redis", "chroma"]) {
