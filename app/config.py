@@ -99,6 +99,12 @@ class Settings(BaseSettings):
     # and nothing else.
     eviction_interval_seconds: float = Field(default=300.0, ge=0)
 
+    # The most Tier 2 entries kept. Each eviction pass that finds more deletes the
+    # oldest, by when they were stored, until this many are left. Every entry
+    # carries its vector, prompt and the whole response, so an unbounded
+    # collection grows the vector store for as long as new questions arrive.
+    tier2_max_entries: int = Field(default=100_000, gt=0)
+
     # The collection carries a schema version for the same reason Tier 1 keys
     # do: if the stored shape changes, a new name orphans the old entries rather
     # than requiring a migration. Chroma rejects names outside this pattern, so
