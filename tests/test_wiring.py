@@ -107,7 +107,7 @@ async def test_building_the_cache_loads_the_embedder_first(
     sizes: list[int] = []
 
     class FakeEmbedder:
-        def __init__(self, model_name: str, *, cache_size: int = 0) -> None:
+        def __init__(self, model_name: str, *, cache_size: int) -> None:
             self.model_name = model_name
             self.cache_size = cache_size
 
@@ -119,4 +119,5 @@ async def test_building_the_cache_loads_the_embedder_first(
     cache = await main.build_semantic_cache(settings)
 
     assert loaded == [settings.embedding_model]
+    assert sizes == [settings.embedding_cache_size]
     assert cache is not None
