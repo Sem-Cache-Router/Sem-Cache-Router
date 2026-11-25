@@ -40,6 +40,13 @@ class Settings(BaseSettings):
     redis_url: str = "redis://localhost:6379/0"
     chroma_host: str = "http://localhost:8001"
 
+    # Run Chroma inside the gateway process, in memory, instead of connecting to
+    # chroma_host. For a host with no second service to run Chroma on, such as a
+    # free Render instance. The semantic cache is then lost on every restart,
+    # and two gateway processes do not share one, so it is for demonstrations
+    # and is off by default.
+    chroma_embedded: bool = False
+
     # Cache behaviour. The threshold is bounded because a value outside [0, 1]
     # is not a cosine similarity, and catching that at startup is cheaper than
     # discovering it as a cache that never hits.
