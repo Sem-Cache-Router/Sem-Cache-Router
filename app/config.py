@@ -159,6 +159,12 @@ class Settings(BaseSettings):
     # accepted rather than validated against a key store that does not exist.
     require_api_key: bool = True
 
+    # The key for the cache admin endpoints (stats and flush). Unset means the
+    # endpoints do not exist and answer 404, because emptying the cache in the
+    # middle of a benchmark is something only an operator should be able to do.
+    # It is separate from caller keys so that no caller can flush the cache.
+    admin_api_key: str | None = Field(default=None, repr=False)
+
     # The largest request body accepted, in bytes. A chat request is a short JSON
     # document, so 1 MiB is far above any real one while still bounding what a
     # single caller can make the gateway read, embed and forward to a provider

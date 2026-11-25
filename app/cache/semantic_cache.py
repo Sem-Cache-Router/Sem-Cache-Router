@@ -329,6 +329,25 @@ class SemanticCache:
         """
         return await self._call("count") is not UNAVAILABLE
 
+    async def count(self) -> int | None:
+        """How many Tier 2 entries exist, or None when Chroma cannot be reached."""
+        result = await self._call("count")
+        return None if result is UNAVAILABLE else int(result)
+
+    async def clear(self) -> int | None:
+        """Delete every Tier 2 entry and return how many went, or None on an outage.
+
+        Deletes the entries, never the collection, which this process holds open.
+        """
+        everything = await self._call("get", include=[])
+        if everything is UNAVAILABLE:
+            return None
+        if not everything["ids"]:
+            return 0
+        if await self._call("delete", ids=everything["ids"]) is UNAVAILABLE:
+            return None
+        return len(everything["ids"])
+
     async def evict_expired(self) -> int:
         """Delete entries past their expiry and return how many went.
 
