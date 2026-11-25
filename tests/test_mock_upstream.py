@@ -163,3 +163,23 @@ def test_a_body_that_is_not_a_chat_request_is_a_400(
     mock: TestClient, body: dict[str, Any]
 ) -> None:
     assert mock.post("/v1/chat/completions", json=body).status_code == 400
+
+
+def test_the_showcase_page_may_read_the_stats_and_fail_a_vendor() -> None:
+    client = TestClient(create_app())
+    origin = {"Origin": "http://localhost:8000"}
+    assert client.get("/stats", headers=origin).headers["access-control-allow-origin"] == (
+        "http://localhost:8000"
+    )
+    preflight = client.options("/control/openai", headers={
+        **origin, "Access-Control-Request-Method": "PUT",
+        "Access-Control-Request-Headers": "Content-Type",
+    })
+    assert preflight.status_code == 200
+    assert "PUT" in preflight.headers["access-control-allow-methods"]
+
+
+def test_no_other_site_may_call_the_mock_from_a_browser() -> None:
+    client = TestClient(create_app())
+    response = client.get("/stats", headers={"Origin": "http://evil.example"})
+    assert "access-control-allow-origin" not in response.headers
