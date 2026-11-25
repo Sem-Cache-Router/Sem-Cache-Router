@@ -24,10 +24,18 @@ from dataclasses import dataclass
 from typing import Any, Literal
 
 from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 Vendor = Literal["openai", "anthropic"]
+
+# The gateway's showcase page (GET / on the gateway) has buttons that fail and
+# restore a vendor and that read the call counts. It runs on the gateway's
+# origin, so the browser lets it call this server only if this server says so.
+# Only the local gateway is allowed, and only the control and stats calls need
+# it; this server is a test tool that is never deployed.
+PAGE_ORIGINS = ["http://localhost:8000", "http://127.0.0.1:8000"]
 
 
 class Behaviour(BaseModel):
@@ -65,6 +73,12 @@ def _prompt_of(body: Any) -> str | None:
 def create_app() -> FastAPI:
     """Build an isolated instance, so a test never shares counters with another."""
     app = FastAPI(title="mock upstream")
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=PAGE_ORIGINS,
+        allow_methods=["GET", "PUT"],
+        allow_headers=["Content-Type"],
+    )
     vendors = {
         "openai": VendorState(Behaviour()),
         "anthropic": VendorState(Behaviour()),
