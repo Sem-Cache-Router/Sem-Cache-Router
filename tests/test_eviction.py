@@ -72,6 +72,9 @@ class ScriptedCache:
             raise result
         return result
 
+    async def evict_over_capacity(self) -> int:
+        return 0
+
 
 async def until(predicate: Callable[[], bool], timeout: float = 3.0) -> bool:
     """Poll for a condition, so a test waits only as long as it needs to."""
