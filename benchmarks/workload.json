@@ -1,0 +1,612 @@
+{
+  "version": 1,
+  "description": "Hand written paraphrase groups, negation pairs and unrelated prompts. A hit is correct only when the answer it serves was produced for a prompt of the same group.",
+  "items": [
+    {
+      "id": "capital-france-1",
+      "group": "capital-france",
+      "kind": "paraphrase",
+      "prompt": "What is the capital of France?"
+    },
+    {
+      "id": "capital-france-2",
+      "group": "capital-france",
+      "kind": "paraphrase",
+      "prompt": "Which city is the capital of France?"
+    },
+    {
+      "id": "capital-france-3",
+      "group": "capital-france",
+      "kind": "paraphrase",
+      "prompt": "Tell me France's capital city."
+    },
+    {
+      "id": "sky-blue-1",
+      "group": "sky-blue",
+      "kind": "paraphrase",
+      "prompt": "Why is the sky blue?"
+    },
+    {
+      "id": "sky-blue-2",
+      "group": "sky-blue",
+      "kind": "paraphrase",
+      "prompt": "What makes the sky look blue?"
+    },
+    {
+      "id": "sky-blue-3",
+      "group": "sky-blue",
+      "kind": "paraphrase",
+      "prompt": "Explain why the sky is blue."
+    },
+    {
+      "id": "reset-password-1",
+      "group": "reset-password",
+      "kind": "paraphrase",
+      "prompt": "How do I reset my password?"
+    },
+    {
+      "id": "reset-password-2",
+      "group": "reset-password",
+      "kind": "paraphrase",
+      "prompt": "How can I reset my password?"
+    },
+    {
+      "id": "reset-password-3",
+      "group": "reset-password",
+      "kind": "paraphrase",
+      "prompt": "What are the steps to reset my password?"
+    },
+    {
+      "id": "cancel-order-1",
+      "group": "cancel-order",
+      "kind": "paraphrase",
+      "prompt": "How do I cancel my order?"
+    },
+    {
+      "id": "cancel-order-2",
+      "group": "cancel-order",
+      "kind": "paraphrase",
+      "prompt": "How can I cancel an order I placed?"
+    },
+    {
+      "id": "cancel-order-3",
+      "group": "cancel-order",
+      "kind": "paraphrase",
+      "prompt": "What is the way to cancel my order?"
+    },
+    {
+      "id": "boil-egg-1",
+      "group": "boil-egg",
+      "kind": "paraphrase",
+      "prompt": "How long should I boil an egg?"
+    },
+    {
+      "id": "boil-egg-2",
+      "group": "boil-egg",
+      "kind": "paraphrase",
+      "prompt": "How many minutes do I boil an egg for?"
+    },
+    {
+      "id": "boil-egg-3",
+      "group": "boil-egg",
+      "kind": "paraphrase",
+      "prompt": "For how long do you boil an egg?"
+    },
+    {
+      "id": "python-list-sort-1",
+      "group": "python-list-sort",
+      "kind": "paraphrase",
+      "prompt": "How do I sort a list in Python?"
+    },
+    {
+      "id": "python-list-sort-2",
+      "group": "python-list-sort",
+      "kind": "paraphrase",
+      "prompt": "What is the way to sort a list in Python?"
+    },
+    {
+      "id": "python-list-sort-3",
+      "group": "python-list-sort",
+      "kind": "paraphrase",
+      "prompt": "How can I sort a Python list?"
+    },
+    {
+      "id": "speed-light-1",
+      "group": "speed-light",
+      "kind": "paraphrase",
+      "prompt": "What is the speed of light?"
+    },
+    {
+      "id": "speed-light-2",
+      "group": "speed-light",
+      "kind": "paraphrase",
+      "prompt": "How fast does light travel?"
+    },
+    {
+      "id": "speed-light-3",
+      "group": "speed-light",
+      "kind": "paraphrase",
+      "prompt": "What is the speed of light in a vacuum?"
+    },
+    {
+      "id": "hamlet-author-1",
+      "group": "hamlet-author",
+      "kind": "paraphrase",
+      "prompt": "Who wrote Hamlet?"
+    },
+    {
+      "id": "hamlet-author-2",
+      "group": "hamlet-author",
+      "kind": "paraphrase",
+      "prompt": "Who is the author of Hamlet?"
+    },
+    {
+      "id": "hamlet-author-3",
+      "group": "hamlet-author",
+      "kind": "paraphrase",
+      "prompt": "Which writer wrote the play Hamlet?"
+    },
+    {
+      "id": "photosynthesis-1",
+      "group": "photosynthesis",
+      "kind": "paraphrase",
+      "prompt": "What is photosynthesis?"
+    },
+    {
+      "id": "photosynthesis-2",
+      "group": "photosynthesis",
+      "kind": "paraphrase",
+      "prompt": "Can you explain photosynthesis?"
+    },
+    {
+      "id": "photosynthesis-3",
+      "group": "photosynthesis",
+      "kind": "paraphrase",
+      "prompt": "Explain what photosynthesis is."
+    },
+    {
+      "id": "refund-policy-1",
+      "group": "refund-policy",
+      "kind": "paraphrase",
+      "prompt": "What is your refund policy?"
+    },
+    {
+      "id": "refund-policy-2",
+      "group": "refund-policy",
+      "kind": "paraphrase",
+      "prompt": "How does your refund policy work?"
+    },
+    {
+      "id": "refund-policy-3",
+      "group": "refund-policy",
+      "kind": "paraphrase",
+      "prompt": "Can you explain your refund policy?"
+    },
+    {
+      "id": "water-boil-temp-1",
+      "group": "water-boil-temp",
+      "kind": "paraphrase",
+      "prompt": "At what temperature does water boil?"
+    },
+    {
+      "id": "water-boil-temp-2",
+      "group": "water-boil-temp",
+      "kind": "paraphrase",
+      "prompt": "What is the boiling point of water?"
+    },
+    {
+      "id": "water-boil-temp-3",
+      "group": "water-boil-temp",
+      "kind": "paraphrase",
+      "prompt": "What temperature does water boil at?"
+    },
+    {
+      "id": "tallest-mountain-1",
+      "group": "tallest-mountain",
+      "kind": "paraphrase",
+      "prompt": "What is the tallest mountain in the world?"
+    },
+    {
+      "id": "tallest-mountain-2",
+      "group": "tallest-mountain",
+      "kind": "paraphrase",
+      "prompt": "Which mountain is the highest in the world?"
+    },
+    {
+      "id": "tallest-mountain-3",
+      "group": "tallest-mountain",
+      "kind": "paraphrase",
+      "prompt": "What is the highest mountain on Earth?"
+    },
+    {
+      "id": "git-undo-commit-1",
+      "group": "git-undo-commit",
+      "kind": "paraphrase",
+      "prompt": "How do I undo the last git commit?"
+    },
+    {
+      "id": "git-undo-commit-2",
+      "group": "git-undo-commit",
+      "kind": "paraphrase",
+      "prompt": "How can I undo my last commit in git?"
+    },
+    {
+      "id": "git-undo-commit-3",
+      "group": "git-undo-commit",
+      "kind": "paraphrase",
+      "prompt": "What is the command to undo the last git commit?"
+    },
+    {
+      "id": "exercise-benefits-1",
+      "group": "exercise-benefits",
+      "kind": "paraphrase",
+      "prompt": "What are the benefits of regular exercise?"
+    },
+    {
+      "id": "exercise-benefits-2",
+      "group": "exercise-benefits",
+      "kind": "paraphrase",
+      "prompt": "Why is regular exercise good for you?"
+    },
+    {
+      "id": "exercise-benefits-3",
+      "group": "exercise-benefits",
+      "kind": "paraphrase",
+      "prompt": "What are the health benefits of exercising regularly?"
+    },
+    {
+      "id": "learn-spanish-1",
+      "group": "learn-spanish",
+      "kind": "paraphrase",
+      "prompt": "What is the best way to learn Spanish?"
+    },
+    {
+      "id": "learn-spanish-2",
+      "group": "learn-spanish",
+      "kind": "paraphrase",
+      "prompt": "How can I learn Spanish quickly?"
+    },
+    {
+      "id": "learn-spanish-3",
+      "group": "learn-spanish",
+      "kind": "paraphrase",
+      "prompt": "What is the fastest way to learn Spanish?"
+    },
+    {
+      "id": "track-package-1",
+      "group": "track-package",
+      "kind": "paraphrase",
+      "prompt": "How do I track my package?"
+    },
+    {
+      "id": "track-package-2",
+      "group": "track-package",
+      "kind": "paraphrase",
+      "prompt": "How can I track my parcel?"
+    },
+    {
+      "id": "track-package-3",
+      "group": "track-package",
+      "kind": "paraphrase",
+      "prompt": "Where can I track my package?"
+    },
+    {
+      "id": "moon-distance-1",
+      "group": "moon-distance",
+      "kind": "paraphrase",
+      "prompt": "How far is the Moon from Earth?"
+    },
+    {
+      "id": "moon-distance-2",
+      "group": "moon-distance",
+      "kind": "paraphrase",
+      "prompt": "What is the distance from the Earth to the Moon?"
+    },
+    {
+      "id": "moon-distance-3",
+      "group": "moon-distance",
+      "kind": "paraphrase",
+      "prompt": "How far away is the Moon?"
+    },
+    {
+      "id": "http-vs-https-1",
+      "group": "http-vs-https",
+      "kind": "paraphrase",
+      "prompt": "What is the difference between HTTP and HTTPS?"
+    },
+    {
+      "id": "http-vs-https-2",
+      "group": "http-vs-https",
+      "kind": "paraphrase",
+      "prompt": "How is HTTPS different from HTTP?"
+    },
+    {
+      "id": "http-vs-https-3",
+      "group": "http-vs-https",
+      "kind": "paraphrase",
+      "prompt": "Explain the difference between HTTP and HTTPS."
+    },
+    {
+      "id": "sleep-hours-1",
+      "group": "sleep-hours",
+      "kind": "paraphrase",
+      "prompt": "How many hours of sleep does an adult need?"
+    },
+    {
+      "id": "sleep-hours-2",
+      "group": "sleep-hours",
+      "kind": "paraphrase",
+      "prompt": "How much sleep do adults need each night?"
+    },
+    {
+      "id": "sleep-hours-3",
+      "group": "sleep-hours",
+      "kind": "paraphrase",
+      "prompt": "How many hours should an adult sleep?"
+    },
+    {
+      "id": "make-coffee-1",
+      "group": "make-coffee",
+      "kind": "paraphrase",
+      "prompt": "How do I make cold brew coffee?"
+    },
+    {
+      "id": "make-coffee-2",
+      "group": "make-coffee",
+      "kind": "paraphrase",
+      "prompt": "What is the way to make cold brew coffee?"
+    },
+    {
+      "id": "make-coffee-3",
+      "group": "make-coffee",
+      "kind": "paraphrase",
+      "prompt": "How can I make cold brew coffee at home?"
+    },
+    {
+      "id": "change-shipping-1",
+      "group": "change-shipping",
+      "kind": "paraphrase",
+      "prompt": "Can I change my shipping address?"
+    },
+    {
+      "id": "change-shipping-2",
+      "group": "change-shipping",
+      "kind": "paraphrase",
+      "prompt": "Is it possible to change my delivery address?"
+    },
+    {
+      "id": "change-shipping-3",
+      "group": "change-shipping",
+      "kind": "paraphrase",
+      "prompt": "How do I change the shipping address on my order?"
+    },
+    {
+      "id": "dna-meaning-1",
+      "group": "dna-meaning",
+      "kind": "paraphrase",
+      "prompt": "What does DNA stand for?"
+    },
+    {
+      "id": "dna-meaning-2",
+      "group": "dna-meaning",
+      "kind": "paraphrase",
+      "prompt": "What is DNA short for?"
+    },
+    {
+      "id": "dna-meaning-3",
+      "group": "dna-meaning",
+      "kind": "paraphrase",
+      "prompt": "What is the full form of DNA?"
+    },
+    {
+      "id": "bones-adult-1",
+      "group": "bones-adult",
+      "kind": "paraphrase",
+      "prompt": "How many bones are in the adult human body?"
+    },
+    {
+      "id": "bones-adult-2",
+      "group": "bones-adult",
+      "kind": "paraphrase",
+      "prompt": "How many bones does an adult human have?"
+    },
+    {
+      "id": "bones-adult-3",
+      "group": "bones-adult",
+      "kind": "paraphrase",
+      "prompt": "What is the number of bones in an adult body?"
+    },
+    {
+      "id": "rainbow-cause-1",
+      "group": "rainbow-cause",
+      "kind": "paraphrase",
+      "prompt": "What causes a rainbow?"
+    },
+    {
+      "id": "rainbow-cause-2",
+      "group": "rainbow-cause",
+      "kind": "paraphrase",
+      "prompt": "How are rainbows formed?"
+    },
+    {
+      "id": "rainbow-cause-3",
+      "group": "rainbow-cause",
+      "kind": "paraphrase",
+      "prompt": "Why do rainbows appear?"
+    },
+    {
+      "id": "recursion-explain-1",
+      "group": "recursion-explain",
+      "kind": "paraphrase",
+      "prompt": "What is recursion in programming?"
+    },
+    {
+      "id": "recursion-explain-2",
+      "group": "recursion-explain",
+      "kind": "paraphrase",
+      "prompt": "Can you explain recursion in programming?"
+    },
+    {
+      "id": "recursion-explain-3",
+      "group": "recursion-explain",
+      "kind": "paraphrase",
+      "prompt": "Explain what recursion means in programming."
+    },
+    {
+      "id": "store-open-sunday-yes",
+      "group": "store-open-sunday-yes",
+      "kind": "negation",
+      "prompt": "Is the store open on Sunday?"
+    },
+    {
+      "id": "store-open-sunday-no",
+      "group": "store-open-sunday-no",
+      "kind": "negation",
+      "prompt": "Is the store not open on Sunday?"
+    },
+    {
+      "id": "refund-30-days-yes",
+      "group": "refund-30-days-yes",
+      "kind": "negation",
+      "prompt": "Can I get a refund within 30 days?"
+    },
+    {
+      "id": "refund-30-days-no",
+      "group": "refund-30-days-no",
+      "kind": "negation",
+      "prompt": "Can I not get a refund within 30 days?"
+    },
+    {
+      "id": "python-before-1995-yes",
+      "group": "python-before-1995-yes",
+      "kind": "negation",
+      "prompt": "Was Python released before 1995?"
+    },
+    {
+      "id": "python-before-1995-no",
+      "group": "python-before-1995-no",
+      "kind": "negation",
+      "prompt": "Was Python not released before 1995?"
+    },
+    {
+      "id": "iphone-wireless-yes",
+      "group": "iphone-wireless-yes",
+      "kind": "negation",
+      "prompt": "Does the iPhone support wireless charging?"
+    },
+    {
+      "id": "iphone-wireless-no",
+      "group": "iphone-wireless-no",
+      "kind": "negation",
+      "prompt": "Does the iPhone not support wireless charging?"
+    },
+    {
+      "id": "dogs-chocolate-yes",
+      "group": "dogs-chocolate-yes",
+      "kind": "negation",
+      "prompt": "Is chocolate safe for dogs?"
+    },
+    {
+      "id": "dogs-chocolate-no",
+      "group": "dogs-chocolate-no",
+      "kind": "negation",
+      "prompt": "Is chocolate not safe for dogs?"
+    },
+    {
+      "id": "free-shipping-yes",
+      "group": "free-shipping-yes",
+      "kind": "negation",
+      "prompt": "Is shipping free on orders over 50 dollars?"
+    },
+    {
+      "id": "free-shipping-no",
+      "group": "free-shipping-no",
+      "kind": "negation",
+      "prompt": "Is shipping not free on orders over 50 dollars?"
+    },
+    {
+      "id": "visa-japan-yes",
+      "group": "visa-japan-yes",
+      "kind": "negation",
+      "prompt": "Is a visa required to visit Japan?"
+    },
+    {
+      "id": "visa-japan-no",
+      "group": "visa-japan-no",
+      "kind": "negation",
+      "prompt": "Is a visa not required to visit Japan?"
+    },
+    {
+      "id": "pluto-planet-yes",
+      "group": "pluto-planet-yes",
+      "kind": "negation",
+      "prompt": "Is Pluto a planet?"
+    },
+    {
+      "id": "pluto-planet-no",
+      "group": "pluto-planet-no",
+      "kind": "negation",
+      "prompt": "Is Pluto not a planet?"
+    },
+    {
+      "id": "single-1",
+      "group": "single-1",
+      "kind": "unrelated",
+      "prompt": "What is the population of Canada?"
+    },
+    {
+      "id": "single-2",
+      "group": "single-2",
+      "kind": "unrelated",
+      "prompt": "How do I tie a tie?"
+    },
+    {
+      "id": "single-3",
+      "group": "single-3",
+      "kind": "unrelated",
+      "prompt": "What is a black hole?"
+    },
+    {
+      "id": "single-4",
+      "group": "single-4",
+      "kind": "unrelated",
+      "prompt": "Who painted the Mona Lisa?"
+    },
+    {
+      "id": "single-5",
+      "group": "single-5",
+      "kind": "unrelated",
+      "prompt": "How do vaccines work?"
+    },
+    {
+      "id": "single-6",
+      "group": "single-6",
+      "kind": "unrelated",
+      "prompt": "What is the stock market?"
+    },
+    {
+      "id": "single-7",
+      "group": "single-7",
+      "kind": "unrelated",
+      "prompt": "How do I make pancakes?"
+    },
+    {
+      "id": "single-8",
+      "group": "single-8",
+      "kind": "unrelated",
+      "prompt": "What is machine learning?"
+    },
+    {
+      "id": "single-9",
+      "group": "single-9",
+      "kind": "unrelated",
+      "prompt": "Why do cats purr?"
+    },
+    {
+      "id": "single-10",
+      "group": "single-10",
+      "kind": "unrelated",
+      "prompt": "What is inflation?"
+    }
+  ]
+}
