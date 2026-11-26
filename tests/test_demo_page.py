@@ -63,3 +63,8 @@ def test_the_page_has_its_three_views() -> None:
 def test_the_comparison_skips_the_cache_with_the_standard_header() -> None:
     script = PAGE.read_text().split("<script>")[1].split("</script>")[0]
     assert 'headers["Cache-Control"] = "no-cache"' in script
+
+
+def test_browsers_are_told_to_check_for_a_newer_page(client: TestClient) -> None:
+    # A cached old page outlived a redesign once; no-cache makes the browser revalidate.
+    assert client.get("/").headers["cache-control"] == "no-cache"
