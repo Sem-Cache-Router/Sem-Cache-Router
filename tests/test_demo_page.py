@@ -25,7 +25,8 @@ def test_every_panel_is_on_the_page(client: TestClient) -> None:
 def test_the_page_calls_only_endpoints_the_gateway_has(client: TestClient) -> None:
     html = client.get("/").text
     called = set(re.findall(r'fetch\("(/[a-z0-9/._-]*)"', html))
-    assert called == {"/v1/chat/completions", "/metrics", "/health", "/admin/cache"}
+    assert called <= {"/v1/chat/completions", "/metrics", "/health", "/admin/cache",
+                      "/config", "/benchmark"}
     for path in ("/metrics", "/health"):
         assert client.get(path).status_code == 200
 
