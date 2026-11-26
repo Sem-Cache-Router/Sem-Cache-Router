@@ -8,9 +8,10 @@
   The showcase page. One file, plain JavaScript, no framework and no build step,
   served by the gateway itself at GET /, so it needs no CORS and nothing extra to
   start. It only calls endpoints the gateway already has: /v1/chat/completions,
-  /metrics, /health and the admin routes, plus the mock vendor's control endpoints
-  when that is running. Every value from a response is written with textContent,
-  never innerHTML, so an answer can never inject markup into the page.
+  /metrics, /health, /config, /benchmark and the admin routes, plus the mock
+  vendor's control endpoints when that is running. Every value from a response is
+  written with textContent, never innerHTML, so an answer can never inject markup
+  into the page. Charts are SVG built element by element for the same reason.
 -->
 <style>
   :root {
@@ -21,6 +22,7 @@
     --blue: #1d4ed8; --blue-bg: #eff4ff;
     --red: #b42318; --red-bg: #fef3f2;
     --amber: #b54708; --amber-bg: #fffaeb;
+    --violet: #6941c6; --violet-bg: #f4f3ff;
     --grey-bg: #f2f4f7;
     --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
   }
@@ -33,6 +35,7 @@
       --blue: #7aa2ff; --blue-bg: #121b33;
       --red: #f97066; --red-bg: #2a1311;
       --amber: #fdb022; --amber-bg: #2a1e0b;
+      --violet: #b692f6; --violet-bg: #1e1533;
       --grey-bg: #1f1f24;
     }
   }
@@ -45,25 +48,30 @@
   /* top bar */
   header.bar { position: sticky; top: 0; z-index: 10; background: var(--surface);
                border-bottom: 1px solid var(--border); }
-  .bar-inner { max-width: 1200px; margin: 0 auto; padding: 0 20px; height: 52px;
-               display: flex; align-items: center; gap: 16px; }
-  .brand { font-weight: 600; letter-spacing: -0.01em; }
-  .brand small { margin-left: 8px; color: var(--faint); font-weight: 400; font-size: 12px; }
+  .bar-inner { max-width: 1240px; margin: 0 auto; padding: 0 20px; height: 52px;
+               display: flex; align-items: center; gap: 20px; }
+  .brand { font-weight: 600; letter-spacing: -0.01em; white-space: nowrap; }
+  nav.tabs { display: flex; gap: 2px; height: 100%; }
+  nav.tabs button { height: 100%; border: 0; border-bottom: 2px solid transparent; border-radius: 0;
+                    background: none; color: var(--muted); padding: 0 12px; font-weight: 500; }
+  nav.tabs button:hover { color: var(--text); background: none; }
+  nav.tabs button[aria-selected="true"] { color: var(--text); border-bottom-color: var(--ink); }
   #health { margin-left: auto; display: flex; gap: 8px; }
-  .chip { display: inline-flex; align-items: center; gap: 6px; padding: 3px 9px;
+  .chip { display: inline-flex; align-items: center; gap: 6px; padding: 3px 9px; white-space: nowrap;
           border: 1px solid var(--border); border-radius: 999px; font-size: 12px; color: var(--muted); }
   .chip::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--faint); }
   .chip.ok::before { background: var(--green); }
   .chip.unreachable::before { background: var(--red); }
 
   /* layout */
-  .page { max-width: 1200px; margin: 0 auto; padding: 24px 20px 48px;
-          display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 20px; align-items: start; }
-  .intro { grid-column: 1 / -1; }
+  .page { max-width: 1240px; margin: 0 auto; padding: 24px 20px 48px; }
+  .intro { margin-bottom: 20px; }
   .intro h1 { margin: 0; font-size: 20px; font-weight: 600; letter-spacing: -0.01em; }
-  .intro p { margin: 2px 0 0; color: var(--muted); max-width: 720px; }
+  .intro p { margin: 2px 0 0; color: var(--muted); max-width: 760px; }
+  .columns { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 20px; align-items: start; }
   .main, .side { display: flex; flex-direction: column; gap: 20px; min-width: 0; }
   .side { position: sticky; top: 72px; }
+  .stack { display: flex; flex-direction: column; gap: 20px; }
 
   .panel { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; }
   .panel-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px;
@@ -72,6 +80,7 @@
   .panel-head span { color: var(--faint); font-size: 12px; }
   .panel-body { padding: 14px 16px; }
   .note { margin: 0 0 12px; color: var(--muted); }
+  .faint { color: var(--faint); }
 
   /* controls */
   form { display: flex; gap: 8px; }
@@ -95,11 +104,28 @@
   .row input { flex: 0 1 240px; }
   .result-line { color: var(--muted); }
 
+  /* request flow */
+  .flow { display: flex; align-items: center; gap: 0; padding: 14px 16px 6px; overflow-x: auto; }
+  .node { flex: 1 1 0; min-width: 96px; border: 1px solid var(--border); border-radius: 6px;
+          padding: 8px 10px; background: var(--surface); transition: border-color .2s, background .2s; }
+  .node b { display: block; font-size: 12px; font-weight: 600; }
+  .node small { color: var(--faint); font-size: 11px; }
+  .node.passed { border-color: var(--faint); }
+  .node.answered { border-color: currentColor; }
+  .node.answered.exact_hit { color: var(--green); background: var(--green-bg); }
+  .node.answered.semantic_hit { color: var(--blue); background: var(--blue-bg); }
+  .node.answered.miss, .node.answered.bypass { color: var(--red); background: var(--red-bg); }
+  .node.answered.throttled { color: var(--amber); background: var(--amber-bg); }
+  .node.answered b { color: inherit; }
+  .node.skipped { opacity: 0.45; }
+  .link { flex: 0 0 18px; height: 1px; background: var(--border); }
+  .flow-caption { padding: 0 16px 14px; color: var(--muted); font-size: 12px; min-height: 32px; }
+
   /* request log */
-  .log-wrap { overflow-x: auto; border-top: 1px solid var(--border); }
+  .log-wrap { overflow-x: auto; border-top: 1px solid var(--border); max-height: 420px; overflow-y: auto; }
   table { width: 100%; border-collapse: collapse; }
-  th { text-align: left; font-weight: 500; font-size: 12px; color: var(--faint);
-       padding: 8px 16px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+  th { text-align: left; font-weight: 500; font-size: 12px; color: var(--faint); background: var(--surface);
+       padding: 8px 16px; border-bottom: 1px solid var(--border); white-space: nowrap; position: sticky; top: 0; }
   td { padding: 10px 16px; border-bottom: 1px solid var(--border); vertical-align: top; }
   tbody tr:last-child td { border-bottom: 0; }
   .r { text-align: right; white-space: nowrap; }
@@ -115,29 +141,41 @@
   .tag.exact_hit { background: var(--green-bg); color: var(--green); }
   .tag.semantic_hit { background: var(--blue-bg); color: var(--blue); }
   .tag.miss { background: var(--red-bg); color: var(--red); }
+  .tag.bypass { background: var(--violet-bg); color: var(--violet); }
   .tag.throttled { background: var(--amber-bg); color: var(--amber); }
 
-  /* overview */
+  /* comparison */
+  .compare { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 12px; }
+  .card { border: 1px solid var(--border); border-radius: 6px; padding: 12px; }
+  .card h3 { margin: 0 0 8px; font-size: 12px; font-weight: 600; color: var(--muted); }
+  .card .big { font-size: 22px; font-weight: 600; letter-spacing: -0.02em; }
+  .card dl { margin-top: 8px; }
+  .speedup { margin-top: 10px; color: var(--muted); }
+
+  /* overview and charts */
   .ratio { font-size: 28px; font-weight: 600; letter-spacing: -0.02em; line-height: 1.2; }
   .ratio-label { color: var(--muted); font-size: 12px; }
   .split { display: flex; height: 8px; margin-top: 12px; border-radius: 4px; overflow: hidden;
            background: var(--sunken); }
   .split span { display: block; height: 100%; width: 0; }
-  .split .s-exact { background: var(--green); }
-  .split .s-semantic { background: var(--blue); }
-  .split .s-miss { background: var(--red); opacity: 0.75; }
-  .legend { display: flex; gap: 12px; margin-top: 8px; font-size: 12px; color: var(--muted); }
+  .s-exact, .l-exact { background: var(--green); }
+  .s-semantic, .l-semantic { background: var(--blue); }
+  .s-miss, .l-miss { background: var(--red); opacity: 0.75; }
+  .legend { display: flex; flex-wrap: wrap; gap: 4px 12px; margin-top: 8px; font-size: 12px; color: var(--muted); }
   .legend i { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 5px; }
-  .legend .l-exact { background: var(--green); }
-  .legend .l-semantic { background: var(--blue); }
-  .legend .l-miss { background: var(--red); opacity: 0.75; }
+  svg.chart { display: block; width: 100%; height: auto; overflow: visible; }
+  svg.chart text { fill: var(--faint); font: 10px var(--mono); }
+  svg.chart.wide text { font-size: 12px; }
+  svg.chart .grid { stroke: var(--border); stroke-width: 1; }
+  .chart-empty { color: var(--faint); font-size: 12px; padding: 8px 0; }
+
   dl { margin: 0; }
   .kv { display: flex; justify-content: space-between; gap: 12px; padding: 7px 0;
         border-top: 1px solid var(--border); }
   .kv:first-child { border-top: 0; padding-top: 0; }
   .kv:last-child { padding-bottom: 0; }
   .kv dt { color: var(--muted); }
-  .kv dd { margin: 0; }
+  .kv dd { margin: 0; text-align: right; }
 
   details summary { cursor: pointer; padding: 12px 16px; font-size: 13px; font-weight: 600; list-style: none; }
   details summary::-webkit-details-marker { display: none; }
@@ -145,18 +183,27 @@
   details[open] summary { border-bottom: 1px solid var(--border); }
   details[open] summary::after { content: "\2212"; }
 
-  footer { grid-column: 1 / -1; color: var(--faint); font-size: 12px; }
+  /* benchmark and configuration */
+  .grid-2 { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 20px; }
+  .badge-note { display: inline-block; padding: 1px 7px; border-radius: 4px; font-size: 12px;
+                background: var(--amber-bg); color: var(--amber); }
+  .table-wrap { overflow-x: auto; }
+
+  footer { margin-top: 24px; color: var(--faint); font-size: 12px; }
   [hidden] { display: none !important; }
 
-  @media (max-width: 900px) {
-    .page { grid-template-columns: minmax(0, 1fr); }
+  @media (max-width: 960px) {
+    .columns { grid-template-columns: minmax(0, 1fr); }
     .side { position: static; }
   }
-  @media (max-width: 560px) {
+  @media (max-width: 600px) {
     .bar-inner, .page { padding-left: 16px; padding-right: 16px; }
-    .brand small { display: none; }
+    .bar-inner { gap: 10px; }
+    .brand { display: none; }
+    #health .chip { padding: 3px 7px; }
     th, td { padding-left: 10px; padding-right: 10px; }
     .col-sim { display: none; }
+    .compare { grid-template-columns: 1fr; }
   }
 </style>
 </head>
@@ -164,7 +211,12 @@
 
 <header class="bar">
   <div class="bar-inner">
-    <div class="brand">Sem-Cache-Router<small>gateway console</small></div>
+    <div class="brand">Sem-Cache-Router</div>
+    <nav class="tabs" role="tablist" aria-label="Views">
+      <button type="button" role="tab" data-tab="console" aria-selected="true">Console</button>
+      <button type="button" role="tab" data-tab="benchmark" aria-selected="false">Benchmark</button>
+      <button type="button" role="tab" data-tab="configuration" aria-selected="false">Configuration</button>
+    </nav>
     <div id="health" aria-label="Dependency status">
       <span class="chip" id="health-redis">Redis</span>
       <span class="chip" id="health-chroma">Chroma</span>
@@ -173,113 +225,202 @@
 </header>
 
 <div class="page">
-  <div class="intro">
-    <h1>Gateway console</h1>
-    <p>An OpenAI-compatible gateway that answers repeated questions from Redis, reworded ones
-       from a vector index, and calls the provider only when neither has an answer.</p>
-  </div>
 
-  <div class="main">
-    <section class="panel" id="ask">
-      <div class="panel-head"><h2>Send a request</h2><span class="num">POST /v1/chat/completions</span></div>
-      <div class="panel-body">
-        <form id="ask-form">
-          <input type="text" id="question" placeholder="Ask a question" autocomplete="off" required
-                 aria-label="Question">
-          <button type="submit" class="primary">Send</button>
-        </form>
-        <div class="examples" id="presets">
-          <span>Examples</span>
-          <button type="button">What is the capital of France?</button>
-          <button type="button">Which city is the capital of France?</button>
-          <button type="button">Is the store open on Sunday?</button>
-          <button type="button">Is the store not open on Sunday?</button>
-        </div>
-      </div>
-      <div class="log-wrap">
-        <table>
-          <thead>
-            <tr>
-              <th>Time</th><th>Result</th><th class="r">Latency</th>
-              <th class="r col-sim">Similarity</th><th>Request</th>
-            </tr>
-          </thead>
-          <tbody id="answers">
-            <tr class="empty"><td colspan="5">No requests yet.</td></tr>
-          </tbody>
-        </table>
-      </div>
-    </section>
+  <!-- Console -->
+  <div data-view="console">
+    <div class="intro">
+      <h1>Gateway console</h1>
+      <p>An OpenAI-compatible gateway that answers repeated questions from Redis, reworded ones
+         from a vector index, and calls the provider only when neither has an answer.</p>
+    </div>
 
-    <section class="panel" id="limit">
-      <div class="panel-head"><h2>Rate limiting</h2><span>token bucket per API key</span></div>
-      <div class="panel-body">
-        <p class="note">Each key has a token budget that refills over time. New requests beyond it
-           are refused with HTTP 429 and a Retry-After header. Everyone on this page shares one key.</p>
-        <div class="row">
-          <button type="button" id="burst">Run burst test</button>
-          <span class="result-line" id="burst-result"></span>
-        </div>
-      </div>
-    </section>
-
-    <section class="panel" id="failover" hidden>
-      <div class="panel-head"><h2>Failover</h2><span>mock provider</span></div>
-      <div class="panel-body">
-        <p class="note">Fail the primary provider, then send a new request. The circuit breaker
-           routes it to the secondary and the caller sees no error.</p>
-        <div class="row">
-          <button type="button" id="break">Fail primary</button>
-          <button type="button" id="fix">Restore primary</button>
-          <span class="result-line num" id="vendor-calls"></span>
-        </div>
-      </div>
-    </section>
-
-    <section class="panel" id="admin">
-      <details>
-        <summary>Administration</summary>
-        <div class="panel-body">
-          <p class="note">Empty both cache tiers. Requires the admin key.</p>
-          <div class="row">
-            <input type="password" id="admin-key" placeholder="Admin key" autocomplete="off"
-                   aria-label="Admin key">
-            <button type="button" id="flush">Empty cache</button>
+    <div class="columns">
+      <div class="main">
+        <section class="panel" id="ask">
+          <div class="panel-head"><h2>Send a request</h2><span class="num">POST /v1/chat/completions</span></div>
+          <div class="panel-body">
+            <form id="ask-form">
+              <input type="text" id="question" placeholder="Ask a question" autocomplete="off" required
+                     aria-label="Question">
+              <button type="submit" class="primary">Send</button>
+            </form>
+            <div class="examples" id="presets">
+              <span>Examples</span>
+              <button type="button">What is the capital of France?</button>
+              <button type="button">Which city is the capital of France?</button>
+              <button type="button">Is the store open on Sunday?</button>
+              <button type="button">Is the store not open on Sunday?</button>
+            </div>
           </div>
-          <p class="result-line" id="flush-result"></p>
-        </div>
-      </details>
-    </section>
+
+          <div class="flow" id="flow" aria-label="Path of the last request">
+            <div class="node" data-node="client"><b>Client</b><small>your request</small></div>
+            <div class="link"></div>
+            <div class="node" data-node="gateway"><b>Gateway</b><small>auth, rate limit</small></div>
+            <div class="link"></div>
+            <div class="node" data-node="redis"><b>Redis</b><small>exact match</small></div>
+            <div class="link"></div>
+            <div class="node" data-node="chroma"><b>Chroma</b><small>same meaning</small></div>
+            <div class="link"></div>
+            <div class="node" data-node="provider"><b>Provider</b><small>LLM call</small></div>
+          </div>
+          <div class="flow-caption" id="flow-caption">The path of each request is shown here.</div>
+
+          <div class="log-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Time</th><th>Result</th><th class="r">Latency</th>
+                  <th class="r col-sim">Similarity</th><th>Request</th>
+                </tr>
+              </thead>
+              <tbody id="answers">
+                <tr class="empty"><td colspan="5">No requests yet.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="panel" id="compare">
+          <div class="panel-head"><h2>With and without the cache</h2><span>same question, two paths</span></div>
+          <div class="panel-body">
+            <p class="note">Ask a question twice: once through the cache, and once with
+               <span class="num">Cache-Control: no-cache</span>, which skips the cache and calls the
+               provider directly.</p>
+            <form id="compare-form">
+              <input type="text" id="compare-question" value="What is the capital of France?"
+                     autocomplete="off" required aria-label="Question to compare">
+              <button type="submit">Compare</button>
+            </form>
+            <div class="compare" id="compare-result" hidden>
+              <div class="card">
+                <h3>Through the cache</h3>
+                <div class="big num" id="cmp-cache-ms">-</div>
+                <dl>
+                  <div class="kv"><dt>Result</dt><dd id="cmp-cache-status">-</dd></div>
+                  <div class="kv"><dt>Provider tokens</dt><dd class="num" id="cmp-cache-tokens">-</dd></div>
+                  <div class="kv"><dt>Provider cost</dt><dd class="num" id="cmp-cache-cost">-</dd></div>
+                </dl>
+              </div>
+              <div class="card">
+                <h3>Provider directly</h3>
+                <div class="big num" id="cmp-direct-ms">-</div>
+                <dl>
+                  <div class="kv"><dt>Result</dt><dd id="cmp-direct-status">-</dd></div>
+                  <div class="kv"><dt>Provider tokens</dt><dd class="num" id="cmp-direct-tokens">-</dd></div>
+                  <div class="kv"><dt>Provider cost</dt><dd class="num" id="cmp-direct-cost">-</dd></div>
+                </dl>
+              </div>
+            </div>
+            <div class="speedup" id="cmp-summary"></div>
+          </div>
+        </section>
+
+        <section class="panel" id="limit">
+          <div class="panel-head"><h2>Rate limiting</h2><span>token bucket per API key</span></div>
+          <div class="panel-body">
+            <p class="note">Each key has a token budget that refills over time. New requests beyond it
+               are refused with HTTP 429 and a Retry-After header. Everyone on this page shares one key.</p>
+            <div class="row">
+              <button type="button" id="burst">Run burst test</button>
+              <span class="result-line" id="burst-result"></span>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel" id="failover" hidden>
+          <div class="panel-head"><h2>Failover</h2><span>mock provider</span></div>
+          <div class="panel-body">
+            <p class="note">Fail the primary provider, then send a new request. The circuit breaker
+               routes it to the secondary and the caller sees no error.</p>
+            <div class="row">
+              <button type="button" id="break">Fail primary</button>
+              <button type="button" id="fix">Restore primary</button>
+              <span class="result-line num" id="vendor-calls"></span>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel" id="admin">
+          <details>
+            <summary>Administration</summary>
+            <div class="panel-body">
+              <p class="note">Empty both cache tiers. Requires the admin key.</p>
+              <div class="row">
+                <input type="password" id="admin-key" placeholder="Admin key" autocomplete="off"
+                       aria-label="Admin key">
+                <button type="button" id="flush">Empty cache</button>
+              </div>
+              <p class="result-line" id="flush-result"></p>
+            </div>
+          </details>
+        </section>
+      </div>
+
+      <aside class="side" id="numbers">
+        <section class="panel">
+          <div class="panel-head"><h2>Overview</h2><span>refreshes every 2 s</span></div>
+          <div class="panel-body">
+            <div class="ratio num" id="hit-ratio">-</div>
+            <div class="ratio-label">of requests served from cache</div>
+            <div class="split" id="split">
+              <span class="s-exact"></span><span class="s-semantic"></span><span class="s-miss"></span>
+            </div>
+            <div class="legend">
+              <span><i class="l-exact"></i>Exact</span>
+              <span><i class="l-semantic"></i>Semantic</span>
+              <span><i class="l-miss"></i>Miss</span>
+            </div>
+          </div>
+        </section>
+        <section class="panel">
+          <div class="panel-head"><h2>Latency per request</h2><span>this page, log scale</span></div>
+          <div class="panel-body" id="latency-chart"><div class="chart-empty">Send a request to start.</div></div>
+        </section>
+        <section class="panel">
+          <div class="panel-head"><h2>Hit ratio over time</h2><span>gateway wide</span></div>
+          <div class="panel-body" id="ratio-chart"><div class="chart-empty">Collecting...</div></div>
+        </section>
+        <section class="panel">
+          <div class="panel-body">
+            <dl id="stats"></dl>
+          </div>
+        </section>
+      </aside>
+    </div>
   </div>
 
-  <aside class="side" id="numbers">
-    <section class="panel">
-      <div class="panel-head"><h2>Overview</h2><span>refreshes every 2 s</span></div>
-      <div class="panel-body">
-        <div class="ratio num" id="hit-ratio">-</div>
-        <div class="ratio-label">of requests served from cache</div>
-        <div class="split" id="split">
-          <span class="s-exact"></span><span class="s-semantic"></span><span class="s-miss"></span>
-        </div>
-        <div class="legend">
-          <span><i class="l-exact"></i>Exact</span>
-          <span><i class="l-semantic"></i>Semantic</span>
-          <span><i class="l-miss"></i>Miss</span>
-        </div>
-      </div>
-    </section>
-    <section class="panel">
-      <div class="panel-body">
-        <dl id="stats"></dl>
-      </div>
-    </section>
-  </aside>
+  <!-- Benchmark -->
+  <div data-view="benchmark" hidden>
+    <div class="intro">
+      <h1>Benchmark</h1>
+      <p>A fixed workload of 101 prompts (paraphrase groups, negation pairs and unrelated
+         questions) replayed with no cache, then through the gateway at three similarity
+         thresholds. A false hit is a cache hit that served the answer to a different question.</p>
+    </div>
+    <div class="stack" id="benchmark-body">
+      <div class="panel"><div class="panel-body faint">Loading...</div></div>
+    </div>
+  </div>
+
+  <!-- Configuration -->
+  <div data-view="configuration" hidden>
+    <div class="intro">
+      <h1>Configuration</h1>
+      <p>The settings this gateway is running with, read from <span class="num">GET /config</span>.
+         Keys are never shown, only whether one is set.</p>
+    </div>
+    <div class="grid-2" id="config-body">
+      <div class="panel"><div class="panel-body faint">Loading...</div></div>
+    </div>
+  </div>
 
   <footer id="footer">Answers come from whichever provider the gateway is configured with.</footer>
 </div>
 
 <script>
   const MOCK = `${location.protocol}//${location.hostname}:8002`;
+  const SVG = "http://www.w3.org/2000/svg";
   const byId = (id) => document.getElementById(id);
 
   function element(tag, className, text) {
@@ -288,19 +429,37 @@
     if (text !== undefined) node.textContent = text;
     return node;
   }
+  function svg(tag, attributes, text) {
+    const node = document.createElementNS(SVG, tag);
+    for (const [key, value] of Object.entries(attributes || {})) node.setAttribute(key, value);
+    if (text !== undefined) node.textContent = text;
+    return node;
+  }
+  function pair(label, value, valueClass = "num") {
+    const row = element("div", "kv");
+    row.append(element("dt", "", label), element("dd", valueClass, value));
+    return row;
+  }
 
   const LABELS = { exact_hit: "Exact hit", semantic_hit: "Semantic hit", miss: "Miss",
-                   throttled: "Rate limited", error: "Error" };
+                   bypass: "Bypassed cache", throttled: "Rate limited", error: "Error" };
+  const COLOURS = { exact_hit: "var(--green)", semantic_hit: "var(--blue)", miss: "var(--red)",
+                    bypass: "var(--violet)", throttled: "var(--amber)", error: "var(--faint)" };
+  // The gateway's own gpt-4o-mini rates, to price what a request would cost a real provider.
+  const USD_PER_TOKEN = { input: 0.15 / 1e6, output: 0.6 / 1e6 };
+
+  /* ---------- requests ---------- */
 
   /* One request to the gateway, described: where the answer came from, or why
      there was none. A 429 carries the wait in its Retry-After header. */
-  async function send(question) {
+  async function send(question, { bypass = false } = {}) {
     const started = performance.now();
-    const result = { status: "error", answer: "", similarity: null, left: null, wait: null };
+    const result = { status: "error", answer: "", similarity: null, left: null, wait: null, usage: null };
+    const headers = { "Content-Type": "application/json", "Authorization": "Bearer demo" };
+    if (bypass) headers["Cache-Control"] = "no-cache";
     try {
       const response = await fetch("/v1/chat/completions", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "Authorization": "Bearer demo" },
+        method: "POST", headers,
         body: JSON.stringify({ model: "gpt-4o-mini", messages: [{ role: "user", content: question }] }),
       });
       const body = await response.json();
@@ -309,6 +468,7 @@
         result.status = body.semcache_status;
         result.answer = body.choices[0].message.content;
         result.similarity = body.semcache_similarity;
+        result.usage = body.usage;
       } else if (response.status === 429) {
         result.status = "throttled";
         result.wait = response.headers.get("retry-after");
@@ -323,6 +483,37 @@
     return result;
   }
 
+  /* Which parts of the pipeline a request reached, by how it was answered. */
+  const PATHS = {
+    exact_hit: { reached: ["client", "gateway", "redis"], answeredBy: "redis" },
+    semantic_hit: { reached: ["client", "gateway", "redis", "chroma"], answeredBy: "chroma" },
+    miss: { reached: ["client", "gateway", "redis", "chroma", "provider"], answeredBy: "provider" },
+    bypass: { reached: ["client", "gateway", "provider"], answeredBy: "provider" },
+    throttled: { reached: ["client", "gateway"], answeredBy: "gateway" },
+  };
+  const CAPTIONS = {
+    exact_hit: (r) => `Exact hit: answered by Redis in ${r.ms} ms. The provider was not called.`,
+    semantic_hit: (r) => `Semantic hit: a stored answer with similarity ${r.similarity.toFixed(3)}, ` +
+                         `found by Chroma in ${r.ms} ms. The provider was not called.`,
+    miss: (r) => `Miss: neither tier had an answer, so the provider answered in ${r.ms} ms. ` +
+                 `The answer is now stored in both tiers.`,
+    bypass: (r) => `Bypass: the cache was skipped on request and the provider answered in ${r.ms} ms.`,
+    throttled: (r) => `Rate limited: the gateway refused the request before any work. Retry after ${r.wait} s.`,
+  };
+
+  function showPath(result) {
+    const path = PATHS[result.status];
+    for (const node of byId("flow").querySelectorAll(".node")) {
+      const name = node.dataset.node;
+      node.className = "node";
+      if (!path) continue;
+      if (name === path.answeredBy) node.classList.add("answered", result.status);
+      else if (path.reached.includes(name)) node.classList.add("passed");
+      else node.classList.add("skipped");
+    }
+    byId("flow-caption").textContent = (CAPTIONS[result.status] || (() => result.answer))(result);
+  }
+
   function logRow(question, result) {
     const row = element("tr");
     row.append(element("td", "time num", new Date().toLocaleTimeString([], { hour12: false })));
@@ -334,19 +525,75 @@
       result.similarity === null || result.similarity === undefined ? "" : result.similarity.toFixed(3)));
     const request = element("td");
     request.append(element("div", "prompt", question), element("div", "reply", result.answer));
-    if (result.left !== null) {
-      request.append(element("div", "left num", `${result.left} tokens left`));
-    }
+    if (result.left !== null) request.append(element("div", "left num", `${result.left} tokens left`));
     row.append(request);
     const log = byId("answers");
     log.querySelector(".empty")?.remove();
     log.prepend(row);
   }
 
+  const samples = [];   // this page's requests, for the latency chart
+
+  function record(question, result) {
+    logRow(question, result);
+    showPath(result);
+    if (result.status !== "error") {
+      samples.push({ ms: Math.max(1, result.ms), status: result.status });
+      if (samples.length > 40) samples.shift();
+      drawLatency();
+    }
+  }
+
   async function ask(question) {
-    logRow(question, await send(question));
+    record(question, await send(question));
     refresh();
   }
+
+  /* ---------- comparison ---------- */
+
+  function cost(usage) {
+    if (!usage) return 0;
+    return usage.prompt_tokens * USD_PER_TOKEN.input + usage.completion_tokens * USD_PER_TOKEN.output;
+  }
+
+  async function compare(question) {
+    const button = byId("compare-form").querySelector("button");
+    button.disabled = true;
+    byId("cmp-summary").textContent = "Comparing...";
+    // Through the cache: ask once so it is stored, then again to be served from cache.
+    let cached = await send(question);
+    if (cached.status === "miss") cached = await send(question);
+    const direct = await send(question, { bypass: true });
+    record(question, cached);
+    record(question, direct);
+
+    const fromCache = cached.status === "exact_hit" || cached.status === "semantic_hit";
+    byId("cmp-cache-ms").textContent = `${cached.ms} ms`;
+    byId("cmp-cache-status").textContent = LABELS[cached.status] || cached.status;
+    byId("cmp-cache-tokens").textContent = fromCache ? "0" : String(cached.usage?.total_tokens ?? "-");
+    byId("cmp-cache-cost").textContent = fromCache ? "$0" : `$${cost(cached.usage).toFixed(6)}`;
+    byId("cmp-direct-ms").textContent = `${direct.ms} ms`;
+    byId("cmp-direct-status").textContent = LABELS[direct.status] || direct.status;
+    byId("cmp-direct-tokens").textContent = String(direct.usage?.total_tokens ?? "-");
+    byId("cmp-direct-cost").textContent = direct.usage ? `$${cost(direct.usage).toFixed(6)}` : "-";
+    byId("compare-result").hidden = false;
+
+    if (fromCache && direct.status === "bypass") {
+      const times = direct.ms / Math.max(1, cached.ms);
+      byId("cmp-summary").textContent =
+        `The cached answer came back ${times >= 10 ? Math.round(times) : times.toFixed(1)} times faster ` +
+        `and cost nothing; the direct call used ${direct.usage.total_tokens} provider tokens ` +
+        `(priced at gpt-4o-mini rates).`;
+    } else if (direct.status !== "bypass") {
+      byId("cmp-summary").textContent = `The direct call did not complete: ${direct.answer}`;
+    } else {
+      byId("cmp-summary").textContent = `The cached path was not served from cache: ${cached.answer}`;
+    }
+    button.disabled = false;
+    refresh();
+  }
+
+  /* ---------- rate limit burst ---------- */
 
   /* Fifteen new questions at once. Random words, so none is a repeat or a
      rewording of another: a cache hit spends no budget and would hide the limit. */
@@ -366,12 +613,78 @@
     const answered = results.filter((r) => r.status !== "throttled" && r.status !== "error").length;
     const limited = results.filter((r) => r.status === "throttled");
     const wait = limited.length ? Math.max(...limited.map((r) => Number(r.wait) || 0)) : 0;
+    for (const result of results) {
+      samples.push({ ms: Math.max(1, result.ms), status: result.status });
+      if (samples.length > 40) samples.shift();
+    }
+    drawLatency();
+    if (limited.length) showPath(limited[0]);
     out.textContent = limited.length
       ? `${answered} admitted, ${limited.length} refused with 429. Budget refills in about ${wait} s.`
       : `All ${answered} admitted. The budget had room for every request.`;
     button.disabled = false;
     refresh();
   }
+
+  /* ---------- charts ---------- */
+
+  /* One bar per request, height on a log scale, so 2 ms and 800 ms both read. */
+  function drawLatency() {
+    const box = byId("latency-chart");
+    if (!samples.length) return;
+    const width = 288, height = 120, left = 34, bottom = 16, top = 6;
+    const plot = height - bottom - top;
+    const max = Math.max(1000, ...samples.map((s) => s.ms));
+    const y = (ms) => top + plot - (Math.log10(ms) / Math.log10(max)) * plot;
+    const chart = svg("svg", { class: "chart", viewBox: `0 0 ${width} ${height}`, role: "img",
+                               "aria-label": "Latency of recent requests" });
+    for (const tick of [1, 10, 100, 1000].filter((t) => t <= max)) {
+      chart.append(svg("line", { class: "grid", x1: left, x2: width, y1: y(tick), y2: y(tick) }));
+      chart.append(svg("text", { x: left - 4, y: y(tick) + 3, "text-anchor": "end" },
+                       tick >= 1000 ? `${tick / 1000}s` : `${tick}ms`));
+    }
+    const slot = (width - left) / 40;
+    samples.forEach((sample, index) => {
+      const top_ = y(sample.ms);
+      chart.append(svg("rect", {
+        x: left + index * slot + 1, y: top_, width: Math.max(2, slot - 2),
+        height: Math.max(1, top + plot - top_), rx: 1,
+        fill: COLOURS[sample.status] || "var(--faint)",
+      }));
+    });
+    chart.append(svg("text", { x: left, y: height - 2 }, "older"));
+    chart.append(svg("text", { x: width, y: height - 2, "text-anchor": "end" }, "newer"));
+    box.replaceChildren(chart);
+  }
+
+  const ratioHistory = [];   // the gateway's hit ratio, one point per poll
+
+  function drawRatio() {
+    const box = byId("ratio-chart");
+    const points = ratioHistory.filter((p) => p !== null);
+    if (points.length < 2) return;
+    const width = 288, height = 90, left = 34, top = 6, bottom = 6;
+    const plot = height - top - bottom;
+    const step = (width - left) / Math.max(1, ratioHistory.length - 1);
+    const chart = svg("svg", { class: "chart", viewBox: `0 0 ${width} ${height}`, role: "img",
+                               "aria-label": "Hit ratio over time" });
+    for (const tick of [0, 0.5, 1]) {
+      const yy = top + plot - tick * plot;
+      chart.append(svg("line", { class: "grid", x1: left, x2: width, y1: yy, y2: yy }));
+      chart.append(svg("text", { x: left - 4, y: yy + 3, "text-anchor": "end" }, `${tick * 100}%`));
+    }
+    const coordinates = ratioHistory.map((value, index) =>
+      value === null ? null : [left + index * step, top + plot - value * plot]).filter(Boolean);
+    chart.append(svg("polyline", {
+      points: coordinates.map((c) => c.join(",")).join(" "),
+      fill: "none", stroke: "var(--blue)", "stroke-width": 2, "stroke-linejoin": "round",
+    }));
+    const last = coordinates[coordinates.length - 1];
+    chart.append(svg("circle", { cx: last[0], cy: last[1], r: 3, fill: "var(--blue)" }));
+    box.replaceChildren(chart);
+  }
+
+  /* ---------- overview ---------- */
 
   const pct = (v) => (v === null || v === undefined ? "-" : `${Math.round(v * 100)}%`);
   const ms = (v) => (v === null || v === undefined ? "-" : `${Math.round(v)} ms`);
@@ -381,6 +694,7 @@
     ["tier1_hits", "Exact hits", count],
     ["tier2_hits", "Semantic hits", count],
     ["misses", "Misses", count],
+    ["cache_bypassed", "Cache bypassed", count],
     ["latency_hit_p50_ms", "Hit latency, p50", ms],
     ["latency_miss_p50_ms", "Miss latency, p50", ms],
     ["throttled_requests", "Rate limited (429)", count],
@@ -398,11 +712,12 @@
       exact.style.width = share(metrics.tier1_hits);
       semantic.style.width = share(metrics.tier2_hits);
       miss.style.width = share(metrics.misses);
-      byId("stats").replaceChildren(...STATS.map(([key, label, show]) => {
-        const pair = element("div", "kv");
-        pair.append(element("dt", "", label), element("dd", "num", show(metrics[key] ?? null)));
-        return pair;
-      }));
+      byId("stats").replaceChildren(...STATS
+        .filter(([key]) => key in metrics)
+        .map(([key, label, show]) => pair(label, show(metrics[key] ?? null))));
+      ratioHistory.push(metrics.hit_ratio ?? null);
+      if (ratioHistory.length > 60) ratioHistory.shift();
+      drawRatio();
       const health = await (await fetch("/health")).json();
       for (const name of ["redis", "chroma"]) {
         const state = health.dependencies[name];
@@ -455,11 +770,174 @@
     refresh();
   }
 
+  /* ---------- benchmark tab ---------- */
+
+  function benchmarkChart(runs) {
+    const series = [
+      ["hit_ratio", "Served from cache", "var(--green)"],
+      ["cost_saved", "Cost saved", "var(--blue)"],
+      ["false_hit_rate", "False hits", "var(--red)"],
+    ];
+    // Laid out at about the width it is shown at, so its text matches the page.
+    const width = 1120, height = 280, left = 44, bottom = 28, top = 12;
+    const plot = height - top - bottom;
+    const group = (width - left) / runs.length;
+    const bar = Math.min(44, (group - 60) / series.length);
+    const chart = svg("svg", { class: "chart wide", viewBox: `0 0 ${width} ${height}`, role: "img",
+                               "aria-label": "Benchmark results by threshold" });
+    for (const tick of [0, 0.25, 0.5, 0.75, 1]) {
+      const yy = top + plot - tick * plot;
+      chart.append(svg("line", { class: "grid", x1: left, x2: width, y1: yy, y2: yy }));
+      chart.append(svg("text", { x: left - 6, y: yy + 3, "text-anchor": "end" }, `${tick * 100}%`));
+    }
+    runs.forEach((run, index) => {
+      const start = left + index * group + (group - bar * series.length) / 2;
+      series.forEach(([key, , colour], s) => {
+        const value = run[key] ?? 0;
+        const h = value * plot;
+        chart.append(svg("rect", { x: start + s * bar, y: top + plot - h, width: bar - 3,
+                                   height: Math.max(0, h), rx: 2, fill: colour }));
+      });
+      chart.append(svg("text", { x: left + index * group + group / 2, y: height - 8,
+                                 "text-anchor": "middle" }, `threshold ${run.threshold.toFixed(2)}`));
+    });
+    const legend = element("div", "legend");
+    for (const [, label, colour] of series) {
+      const item = element("span", "", label);
+      const swatch = element("i");
+      swatch.style.background = colour;
+      item.prepend(swatch);
+      legend.append(item);
+    }
+    return [chart, legend];
+  }
+
+  async function loadBenchmark() {
+    const box = byId("benchmark-body");
+    let data;
+    try {
+      const response = await fetch("/benchmark");
+      if (!response.ok) throw new Error(String(response.status));
+      data = await response.json();
+    } catch (error) {
+      const panel = element("div", "panel");
+      panel.append(element("div", "panel-body faint", "No benchmark results are published on this gateway."));
+      box.replaceChildren(panel);
+      return;
+    }
+    const gateway = data.runs.filter((run) => run.mode === "gateway");
+    const direct = data.runs.find((run) => run.mode === "direct");
+
+    const chartPanel = element("section", "panel");
+    const head = element("div", "panel-head");
+    head.append(element("h2", "", "Hit ratio, cost saved and false hits by threshold"));
+    head.append(element("span", data.simulated ? "badge-note" : "",
+      data.simulated ? "Simulated provider" : `Provider: ${data.providers.join(", ")}`));
+    const body = element("div", "panel-body");
+    body.append(...benchmarkChart(gateway));
+    body.append(element("p", "note",
+      "A lower threshold serves more from cache and saves more, but more of those answers belong " +
+      "to a different question. Negated questions (\"open\" against \"not open\") are the hardest case."));
+    chartPanel.append(head, body);
+
+    const tablePanel = element("section", "panel");
+    const thead = element("div", "panel-head");
+    thead.append(element("h2", "", "All runs"), element("span", "num",
+      `${direct ? direct.requests : gateway[0]?.requests} requests per run, commit ${data.commits.join(", ")}`));
+    const wrap = element("div", "table-wrap");
+    const table = element("table");
+    const headRow = element("tr");
+    for (const [label, right] of [["Run", false], ["Served from cache", true], ["False hits", true],
+                                  ["Negation false hits", true], ["Provider calls", true],
+                                  ["Cost saved", true], ["Hit p50", true], ["Miss p50", true]]) {
+      headRow.append(element("th", right ? "r" : "", label));
+    }
+    const header = element("thead");
+    header.append(headRow);
+    const rows = element("tbody");
+    for (const run of data.runs) {
+      const row = element("tr");
+      row.append(element("td", "", run.mode === "direct" ? "No cache" : `Threshold ${run.threshold.toFixed(2)}`));
+      row.append(element("td", "num r", pct(run.hit_ratio)));
+      row.append(element("td", "num r", pct(run.false_hit_rate)));
+      row.append(element("td", "num r", pct(run.negation_false_hit_rate)));
+      row.append(element("td", "num r", String(run.provider_calls)));
+      row.append(element("td", "num r", pct(run.cost_saved)));
+      row.append(element("td", "num r", ms(run.hit_p50_ms)));
+      row.append(element("td", "num r", ms(run.miss_p50_ms)));
+      rows.append(row);
+    }
+    table.append(header, rows);
+    wrap.append(table);
+    tablePanel.append(thead, wrap);
+    box.replaceChildren(chartPanel, tablePanel);
+  }
+
+  /* ---------- configuration tab ---------- */
+
+  const GROUPS = { cache: "Cache", limiter: "Rate limiter", providers: "Providers", access: "Access" };
+
+  function shown(value) {
+    if (value === true) return "On";
+    if (value === false) return "Off";
+    if (value === null || value === undefined) return "None";
+    return String(value);
+  }
+
+  async function loadConfiguration() {
+    const box = byId("config-body");
+    try {
+      const response = await fetch("/config");
+      if (!response.ok) throw new Error(String(response.status));
+      const groups = await response.json();
+      box.replaceChildren(...Object.entries(groups).map(([group, rows]) => {
+        const panel = element("section", "panel");
+        const head = element("div", "panel-head");
+        head.append(element("h2", "", GROUPS[group] || group));
+        const body = element("div", "panel-body");
+        const list = element("dl");
+        list.append(...rows.map((row) => pair(row.label, shown(row.value))));
+        body.append(list);
+        panel.append(head, body);
+        return panel;
+      }));
+    } catch (error) {
+      const panel = element("div", "panel");
+      panel.append(element("div", "panel-body faint", "This gateway does not publish its configuration."));
+      box.replaceChildren(panel);
+    }
+  }
+
+  /* ---------- tabs ---------- */
+
+  const loaded = {};
+  function showTab(name) {
+    for (const tab of document.querySelectorAll("nav.tabs button")) {
+      tab.setAttribute("aria-selected", String(tab.dataset.tab === name));
+    }
+    for (const view of document.querySelectorAll("[data-view]")) {
+      view.hidden = view.dataset.view !== name;
+    }
+    if (name === "benchmark" && !loaded.benchmark) { loaded.benchmark = true; loadBenchmark(); }
+    if (name === "configuration" && !loaded.configuration) { loaded.configuration = true; loadConfiguration(); }
+    if (location.hash !== `#${name}`) history.replaceState(null, "", name === "console" ? "#" : `#${name}`);
+  }
+  for (const tab of document.querySelectorAll("nav.tabs button")) {
+    tab.addEventListener("click", () => showTab(tab.dataset.tab));
+  }
+
+  /* ---------- wiring ---------- */
+
   byId("ask-form").addEventListener("submit", (event) => {
     event.preventDefault();
     const input = byId("question");
     const question = input.value.trim();
     if (question) { ask(question); input.value = ""; }
+  });
+  byId("compare-form").addEventListener("submit", (event) => {
+    event.preventDefault();
+    const question = byId("compare-question").value.trim();
+    if (question) compare(question);
   });
   for (const button of byId("presets").querySelectorAll("button")) {
     button.addEventListener("click", () => ask(button.textContent));
@@ -469,6 +947,8 @@
   byId("flush").addEventListener("click", flush);
   byId("burst").addEventListener("click", burst);
 
+  const initial = location.hash.slice(1);
+  showTab(["benchmark", "configuration"].includes(initial) ? initial : "console");
   refresh();
   setInterval(refresh, 2000);
 </script>
