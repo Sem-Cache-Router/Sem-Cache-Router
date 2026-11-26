@@ -68,6 +68,39 @@ def table(runs: list[dict[str, Any]]) -> list[dict[str, str]]:
     return rows
 
 
+def summary(runs: list[dict[str, Any]]) -> dict[str, Any]:
+    """The numbers of every run as plain values, for a page to draw rather than read.
+
+    The same figures as table(), unformatted: ratios as fractions, latency in
+    milliseconds, and cost saved against the direct run when there is one.
+    """
+    baseline = next((r["summary"]["cost_usd"] for r in runs if r["mode"] == "direct"), None)
+    rows = []
+    for run in runs:
+        s, latency = run["summary"], run["summary"]["latency_ms"]
+        rows.append({
+            "label": run["label"],
+            "mode": run["mode"],
+            "threshold": run.get("threshold"),
+            "requests": s["requests"],
+            "hit_ratio": s["hit_ratio"],
+            "false_hit_rate": s["false_hit_rate"],
+            "negation_false_hit_rate": s["false_hit_rate_by_kind"].get("negation"),
+            "provider_calls": s["provider_calls"],
+            "cost_saved": (1 - s["cost_usd"] / baseline) if baseline else None,
+            "hit_p50_ms": latency["hit_p50"],
+            "hit_p95_ms": latency["hit_p95"],
+            "miss_p50_ms": latency["miss_p50"],
+            "miss_p95_ms": latency["miss_p95"],
+        })
+    return {
+        "simulated": any(run["simulated"] for run in runs),
+        "commits": sorted({run["commit"] for run in runs}),
+        "providers": sorted({run.get("provider", "mock") for run in runs}),
+        "runs": rows,
+    }
+
+
 def markdown(runs: list[dict[str, Any]], chart: str | None = None) -> str:
     """The report as Markdown: provenance, the table, and an honest note on what it is."""
     rows = table(runs)
@@ -131,9 +164,12 @@ def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description="Build the benchmark report from harness runs.")
     parser.add_argument("runs", nargs="+", type=Path, help="JSON records written by the harness")
     parser.add_argument("--out", type=Path, required=True, help="Markdown file to write")
+    parser.add_argument("--json", type=Path, help="also write the numbers as JSON, for a page")
     args = parser.parse_args(argv)
 
     runs = load_runs(args.runs)
+    if args.json:
+        args.json.write_text(json.dumps(summary(runs), indent=2) + "\n")
     chart = args.out.with_suffix(".svg")
     chart.write_text(svg(runs))
     args.out.write_text(markdown(runs, chart=chart.name))
