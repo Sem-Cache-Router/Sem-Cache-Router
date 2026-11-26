@@ -58,10 +58,15 @@ def error_response(
             request_id=request_id,
         )
     )
+    headers = {"x-request-id": request_id}
+    if retry_after_seconds is not None:
+        # The standard header as well as the body field, since HTTP clients and
+        # retry libraries read the header and never the body.
+        headers["Retry-After"] = str(retry_after_seconds)
     return JSONResponse(
         status_code=status_code,
         content=body.model_dump(mode="json"),
-        headers={"x-request-id": request_id},
+        headers=headers,
     )
 
 
