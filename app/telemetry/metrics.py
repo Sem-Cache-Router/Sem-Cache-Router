@@ -35,6 +35,7 @@ class Metrics:
         self.tier1_hits = 0
         self.tier2_hits = 0
         self.misses = 0
+        self.cache_bypassed = 0
         self.tier2_unavailable = 0
         self.throttled_requests = 0
         self.breaker_failovers = 0
@@ -54,6 +55,15 @@ class Metrics:
         """Count a Tier 2 semantic cache hit."""
         with self._lock:
             self.tier2_hits += 1
+
+    def record_bypass(self) -> None:
+        """Count a request that skipped the cache because the caller asked it to.
+
+        Kept apart from misses, so the hit ratio describes only requests the
+        cache was allowed to answer.
+        """
+        with self._lock:
+            self.cache_bypassed += 1
 
     def record_miss(self) -> None:
         """Count a cache miss that reached a provider."""
@@ -143,6 +153,7 @@ class Metrics:
                 "tier1_hits": self.tier1_hits,
                 "tier2_hits": self.tier2_hits,
                 "misses": self.misses,
+                "cache_bypassed": self.cache_bypassed,
                 "tier2_unavailable": self.tier2_unavailable,
                 "requests_total": requests_total,
                 "hit_ratio": hit_ratio,
