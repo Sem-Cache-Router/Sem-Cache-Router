@@ -21,7 +21,7 @@ from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
-from app.api import admin, chat, demo, health
+from app.api import admin, chat, demo, health, info
 from app.cache.embedder import OnnxEmbedder
 from app.cache.eviction import start_eviction, stop_eviction
 from app.cache.exact_cache import ExactCache
@@ -203,6 +203,7 @@ def create_app() -> FastAPI:
     app.include_router(chat.router)
     app.include_router(admin.router)
     app.include_router(demo.router)
+    app.include_router(info.router)
     app.add_middleware(BodySizeLimit)
 
     @app.exception_handler(RequestValidationError)

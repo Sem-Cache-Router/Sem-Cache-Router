@@ -1,0 +1,71 @@
+{
+  "simulated": true,
+  "commits": [
+    "49a1751"
+  ],
+  "providers": [
+    "mock"
+  ],
+  "runs": [
+    {
+      "label": "direct",
+      "mode": "direct",
+      "threshold": null,
+      "requests": 202,
+      "hit_ratio": 0.0,
+      "false_hit_rate": null,
+      "negation_false_hit_rate": null,
+      "provider_calls": 202,
+      "cost_saved": 0.0,
+      "hit_p50_ms": null,
+      "hit_p95_ms": null,
+      "miss_p50_ms": 803.838752000047,
+      "miss_p95_ms": 804.9847989998398
+    },
+    {
+      "label": "t0.75",
+      "mode": "gateway",
+      "threshold": 0.75,
+      "requests": 202,
+      "hit_ratio": 0.7772277227722773,
+      "false_hit_rate": 0.10191082802547771,
+      "negation_false_hit_rate": 0.6666666666666666,
+      "provider_calls": 45,
+      "cost_saved": 0.7861988930548116,
+      "hit_p50_ms": 3.3154549998926086,
+      "hit_p95_ms": 18.88637800016113,
+      "miss_p50_ms": 829.7959849999188,
+      "miss_p95_ms": 846.5015070000845
+    },
+    {
+      "label": "t0.90",
+      "mode": "gateway",
+      "threshold": 0.9,
+      "requests": 202,
+      "hit_ratio": 0.7178217821782178,
+      "false_hit_rate": 0.1103448275862069,
+      "negation_false_hit_rate": 0.6666666666666666,
+      "provider_calls": 57,
+      "cost_saved": 0.72710230316015,
+      "hit_p50_ms": 2.922172000126011,
+      "hit_p95_ms": 19.470881999950507,
+      "miss_p50_ms": 835.8119269998951,
+      "miss_p95_ms": 846.0894919999191
+    },
+    {
+      "label": "t0.95",
+      "mode": "gateway",
+      "threshold": 0.95,
+      "requests": 202,
+      "hit_ratio": 0.6039603960396039,
+      "false_hit_rate": 0.13114754098360656,
+      "negation_false_hit_rate": 0.6666666666666666,
+      "provider_calls": 80,
+      "cost_saved": 0.6063202999464381,
+      "hit_p50_ms": 1.3845710000168765,
+      "hit_p95_ms": 19.418155000039405,
+      "miss_p50_ms": 837.4998360000063,
+      "miss_p95_ms": 840.3544729999339
+    }
+  ]
+}
