@@ -84,6 +84,7 @@
   .badge.miss          { background: var(--miss); }
   .badge.exact_hit     { background: var(--exact); }
   .badge.semantic_hit  { background: var(--semantic); }
+  .badge.throttled     { background: #b9770e; }
   .badge.error         { background: var(--error); }
 
   .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
@@ -176,6 +177,19 @@
       <ol id="answers"></ol>
     </section>
 
+    <!-- rate limit -->
+    <section id="limit">
+      <h2>Rate limit</h2>
+      <p class="lead">Every caller has a token budget that refills over time. Send a burst of new
+        questions at once and watch the gateway refuse the ones over budget with a 429 and a
+        wait, then let them through again once the budget refills. Everyone on this page shares
+        one budget.</p>
+      <div class="row">
+        <button type="button" id="burst">Send a burst</button>
+        <span id="burst-result"></span>
+      </div>
+    </section>
+
     <!-- failover controls (shown only when mock vendor is up) -->
     <section id="failover" hidden>
       <h2>Failover</h2>
@@ -222,9 +236,11 @@
     return node;
   }
 
-  async function ask(question) {
+  /* One request to the gateway, described: where the answer came from, or why
+     there was none. A 429 carries the wait in its Retry-After header. */
+  async function send(question) {
     const started = performance.now();
-    let status = "error", answer = "", similarity = null;
+    const result = { status: "error", answer: "", similarity: null, left: null, wait: null };
     try {
       const response = await fetch("/v1/chat/completions", {
         method: "POST",
@@ -232,26 +248,63 @@
         body: JSON.stringify({ model: "gpt-4o-mini", messages: [{ role: "user", content: question }] }),
       });
       const body = await response.json();
+      result.left = response.headers.get("x-ratelimit-remaining-tokens");
       if (response.ok) {
-        status = body.semcache_status;
-        answer = body.choices[0].message.content;
-        similarity = body.semcache_similarity;
+        result.status = body.semcache_status;
+        result.answer = body.choices[0].message.content;
+        result.similarity = body.semcache_similarity;
+      } else if (response.status === 429) {
+        result.status = "throttled";
+        result.wait = response.headers.get("retry-after");
+        result.answer = `Over the token budget: try again in ${result.wait} s.`;
       } else {
-        answer = `${response.status} ${body.error ? body.error.code : ""}`;
+        result.answer = `${response.status} ${body.error ? body.error.code : ""}`;
       }
     } catch (error) {
-      answer = "no response from the gateway";
+      result.answer = "no response from the gateway";
     }
+    result.ms = Math.round(performance.now() - started);
+    return result;
+  }
+
+  async function ask(question) {
+    const result = await send(question);
     const item = element("li");
-    item.append(element("div", "q", question), element("div", "", answer));
+    item.append(element("div", "q", question), element("div", "", result.answer));
     const meta = element("div", "meta");
-    meta.append(element("span", `badge ${status}`, status.replace("_", " ")),
-                element("span", "", `${Math.round(performance.now() - started)} ms`));
-    if (similarity !== null && similarity !== undefined) {
-      meta.append(element("span", "", `similarity ${similarity.toFixed(3)}`));
+    const label = result.status === "throttled" ? "rate limited" : result.status.replace("_", " ");
+    meta.append(element("span", `badge ${result.status}`, label),
+                element("span", "", `${result.ms} ms`));
+    if (result.similarity !== null && result.similarity !== undefined) {
+      meta.append(element("span", "", `similarity ${result.similarity.toFixed(3)}`));
+    }
+    if (result.left !== null) {
+      meta.append(element("span", "", `${result.left} tokens left`));
     }
     item.append(meta);
     byId("answers").prepend(item);
+    refresh();
+  }
+
+  /* Fifteen new questions at once. Random words, so none is a repeat or a
+     rewording of another: a cache hit spends no budget and would hide the limit. */
+  const WORDS = ("apple river engine violin glacier poem harbor tomato satellite ledger cactus " +
+                 "orbit lantern piano canyon tulip quartz bicycle opera falcon meadow volcano").split(" ");
+  function freshQuestion() {
+    const picked = [...WORDS].sort(() => Math.random() - 0.5).slice(0, 5);
+    return `What links ${picked.join(", ")}?`;
+  }
+
+  async function burst() {
+    const out = byId("burst-result");
+    out.textContent = "sending 15 new questions...";
+    const results = await Promise.all(Array.from({ length: 15 }, () => send(freshQuestion())));
+    const answered = results.filter((r) => r.status !== "throttled" && r.status !== "error").length;
+    const limited = results.filter((r) => r.status === "throttled");
+    const wait = limited.length ? Math.max(...limited.map((r) => Number(r.wait) || 0)) : 0;
+    out.textContent = limited.length
+      ? `${answered} answered, ${limited.length} rate limited (429). The budget refills: try again in about ${wait} s.`
+      : `All ${answered} answered: the budget had room for every one.`;
     refresh();
   }
 
@@ -265,6 +318,7 @@
     ["latency_hit_p50_ms",     "hit p50",            (v) => v === null ? "-" : `${Math.round(v)} ms`],
     ["latency_miss_p50_ms",    "miss p50",           (v) => v === null ? "-" : `${Math.round(v)} ms`],
     ["total_provider_spend_usd","spend",             (v) => `$${Number(v).toFixed(4)}`],
+    ["throttled_requests",     "rate limited (429)", (v) => v ?? "-"],
     ["breaker_failovers",      "failovers",          (v) => v ?? "-"],
     ["tier2_unavailable",      "Chroma outages",     (v) => v ?? "-"],
   ];
@@ -339,6 +393,7 @@
   byId("break").addEventListener("click", () => setPrimary(503));
   byId("fix").addEventListener("click", () => setPrimary(200));
   byId("flush").addEventListener("click", flush);
+  byId("burst").addEventListener("click", burst);
 
   refresh();
   setInterval(refresh, 2000);
