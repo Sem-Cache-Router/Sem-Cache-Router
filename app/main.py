@@ -28,6 +28,9 @@ from app.cache.exact_cache import ExactCache
 from app.cache.semantic_cache import SemanticCache
 from app.config import Settings, get_settings
 from app.errors import GatewayError, error_response, request_id
+from app.limiter.admission import AdmissionController
+from app.limiter.bucket import TokenBucket
+from app.limiter.estimator import TokenEstimator
 from app.models import ErrorCode
 from app.providers.factory import install_providers
 from app.request_limits import BodySizeLimit
@@ -94,6 +97,17 @@ async def build_semantic_cache(settings: Settings) -> SemanticCache:
     )
 
 
+async def build_limiter(state: Any, settings: Settings) -> AdmissionController | None:
+    """Build the admission controller and its estimator, or None when the limiter is off."""
+    if not settings.limiter_enabled:
+        return None
+    estimator = TokenEstimator()
+    await asyncio.to_thread(estimator.load)
+    state.estimator = estimator
+    bucket = TokenBucket(state.redis, settings.bucket_capacity, settings.bucket_refill_rate)
+    return AdmissionController(bucket)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """Build dependencies and attach them to app.state, then tear them down.
@@ -123,13 +137,12 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     if getattr(app.state, "cache", None) is None:
         app.state.cache = ExactCache(app.state.redis, settings.cache_ttl_seconds)
 
-    # The admission controller is not built yet. None rather than a null object,
-    # because a null object would force reserve and reconcile to be given
-    # signatures now, before Reservation exists and before tiktoken has shown
-    # what an estimate looks like. The route guards on it explicitly, so the
-    # position of the check is fixed even though the implementation is not.
+    # Admission control, only when switched on; otherwise None and every request
+    # is admitted as before. The tokenizer is loaded here, off the event loop,
+    # because the first load reads its vocabulary from disk (or downloads it
+    # outside the image), and no request should pay for that.
     if getattr(app.state, "limiter", None) is None:
-        app.state.limiter = None
+        app.state.limiter = await build_limiter(app.state, settings)
 
     if getattr(app.state, "metrics", None) is None:
         app.state.metrics = Metrics(settings.metrics_latency_window)
