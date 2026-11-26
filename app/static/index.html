@@ -14,201 +14,268 @@
 -->
 <style>
   :root {
-    --bg: #f6f7f9; --panel: #ffffff; --text: #1d2330; --dim: #5d6675; --line: #dde1e7;
-    --miss: #c0392b; --exact: #1e8449; --semantic: #2166ac; --error: #7f8c8d;
-    --nav-h: 48px;
+    --bg: #f7f7f8; --surface: #ffffff; --sunken: #f1f1f3;
+    --text: #18181b; --muted: #63636b; --faint: #8e8e96; --border: #e4e4e7;
+    --ink: #18181b; --ink-text: #ffffff;
+    --green: #15803d; --green-bg: #ecfdf3;
+    --blue: #1d4ed8; --blue-bg: #eff4ff;
+    --red: #b42318; --red-bg: #fef3f2;
+    --amber: #b54708; --amber-bg: #fffaeb;
+    --grey-bg: #f2f4f7;
+    --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
   }
   @media (prefers-color-scheme: dark) {
-    :root { --bg: #0f1115; --panel: #181b21; --text: #e6e9ee; --dim: #9aa3b0; --line: #2b3038; }
+    :root {
+      --bg: #0c0c0e; --surface: #141417; --sunken: #1b1b1f;
+      --text: #ececef; --muted: #a0a0a8; --faint: #6f6f78; --border: #27272c;
+      --ink: #ececef; --ink-text: #0c0c0e;
+      --green: #4ade80; --green-bg: #0f2418;
+      --blue: #7aa2ff; --blue-bg: #121b33;
+      --red: #f97066; --red-bg: #2a1311;
+      --amber: #fdb022; --amber-bg: #2a1e0b;
+      --grey-bg: #1f1f24;
+    }
   }
   * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
   body { margin: 0; background: var(--bg); color: var(--text);
-         font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+         font: 14px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif; }
+  .num { font-family: var(--mono); font-variant-numeric: tabular-nums; }
 
-  /* ── top nav ──────────────────────────────────────────────── */
-  nav {
-    position: sticky; top: 0; z-index: 10;
-    background: var(--panel); border-bottom: 1px solid var(--line);
-    height: var(--nav-h);
-    display: flex; align-items: center; justify-content: center;
-  }
-  .health-row { display: flex; gap: 20px; align-items: center; }
-  .dot { font-size: 14px; display: flex; align-items: center; gap: 6px; }
-  .dot::before { content: ""; display: inline-block; width: 9px; height: 9px;
-                  border-radius: 50%; background: var(--error); flex-shrink: 0; }
-  .dot.ok::before         { background: var(--exact); }
-  .dot.unreachable::before { background: var(--miss); }
-  .dot.disabled::before   { background: var(--dim); }
+  /* top bar */
+  header.bar { position: sticky; top: 0; z-index: 10; background: var(--surface);
+               border-bottom: 1px solid var(--border); }
+  .bar-inner { max-width: 1200px; margin: 0 auto; padding: 0 20px; height: 52px;
+               display: flex; align-items: center; gap: 16px; }
+  .brand { font-weight: 600; letter-spacing: -0.01em; }
+  .brand small { margin-left: 8px; color: var(--faint); font-weight: 400; font-size: 12px; }
+  #health { margin-left: auto; display: flex; gap: 8px; }
+  .chip { display: inline-flex; align-items: center; gap: 6px; padding: 3px 9px;
+          border: 1px solid var(--border); border-radius: 999px; font-size: 12px; color: var(--muted); }
+  .chip::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--faint); }
+  .chip.ok::before { background: var(--green); }
+  .chip.unreachable::before { background: var(--red); }
 
-  /* ── page shell: two columns ─────────────────────────────── */
-  .page {
-    max-width: 1140px; margin: 0 auto;
-    display: grid;
-    /* center col takes remaining space; sidebar is fixed 220px */
-    grid-template-columns: 1fr 220px;
-    gap: 20px;
-    padding: 28px 16px 48px;
-    align-items: start;
-  }
+  /* layout */
+  .page { max-width: 1200px; margin: 0 auto; padding: 24px 20px 48px;
+          display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 20px; align-items: start; }
+  .intro { grid-column: 1 / -1; }
+  .intro h1 { margin: 0; font-size: 20px; font-weight: 600; letter-spacing: -0.01em; }
+  .intro p { margin: 2px 0 0; color: var(--muted); max-width: 720px; }
+  .main, .side { display: flex; flex-direction: column; gap: 20px; min-width: 0; }
+  .side { position: sticky; top: 72px; }
 
-  /* ── center column ───────────────────────────────────────── */
-  .center {
-    display: flex; flex-direction: column; gap: 16px;
-  }
-  .hero { text-align: center; }
-  h1 { margin: 0 0 4px; font-size: 28px; }
-  p.lead { margin: 0; color: var(--dim); font-size: 15px; }
+  .panel { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; }
+  .panel-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px;
+                padding: 12px 16px; border-bottom: 1px solid var(--border); }
+  .panel-head h2 { margin: 0; font-size: 13px; font-weight: 600; }
+  .panel-head span { color: var(--faint); font-size: 12px; }
+  .panel-body { padding: 14px 16px; }
+  .note { margin: 0 0 12px; color: var(--muted); }
 
-  section { background: var(--panel); border: 1px solid var(--line);
-            border-radius: 10px; padding: 16px; }
-  h2 { margin: 0 0 12px; font-size: 17px; }
-
+  /* controls */
   form { display: flex; gap: 8px; }
   input[type=text], input[type=password] {
-    flex: 1; min-width: 0; padding: 8px 10px;
-    border: 1px solid var(--line); border-radius: 6px;
-    background: var(--bg); color: var(--text); font: inherit;
-  }
-  button { padding: 8px 14px; border: 1px solid var(--line); border-radius: 6px;
-           background: var(--bg); color: var(--text); font: inherit; cursor: pointer; }
-  button.primary { background: var(--semantic); border-color: var(--semantic); color: #fff; }
-  .presets { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
-  .presets button { font-size: 14px; padding: 4px 10px; }
-  ol#answers { list-style: none; margin: 12px 0 0; padding: 0; }
-  ol#answers li { border-top: 1px solid var(--line); padding: 10px 0; }
-  .q { font-weight: 600; }
-  .meta { display: flex; flex-wrap: wrap; gap: 10px; align-items: center;
-          margin-top: 4px; color: var(--dim); font-size: 14px; }
-  .badge { color: #fff; border-radius: 4px; padding: 1px 8px;
-           font-size: 13px; font-weight: 600; }
-  .badge.miss          { background: var(--miss); }
-  .badge.exact_hit     { background: var(--exact); }
-  .badge.semantic_hit  { background: var(--semantic); }
-  .badge.error         { background: var(--error); }
+    flex: 1; min-width: 0; height: 36px; padding: 0 12px; border: 1px solid var(--border);
+    border-radius: 6px; background: var(--surface); color: var(--text); font: inherit; }
+  input:focus-visible, button:focus-visible { outline: 2px solid var(--blue); outline-offset: 1px; }
+  button { height: 36px; padding: 0 14px; border: 1px solid var(--border); border-radius: 6px;
+           background: var(--surface); color: var(--text); font: inherit; font-weight: 500;
+           cursor: pointer; white-space: nowrap; }
+  button:hover { background: var(--sunken); }
+  button:disabled { opacity: 0.6; cursor: default; }
+  button.primary { background: var(--ink); border-color: var(--ink); color: var(--ink-text); }
+  button.primary:hover { opacity: 0.9; }
+  .examples { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; margin-top: 10px;
+              color: var(--faint); font-size: 12px; }
+  .examples button { height: 26px; padding: 0 9px; font-size: 12px; font-weight: 400;
+                     color: var(--muted); background: var(--sunken); border-color: transparent; }
+  .examples button:hover { color: var(--text); }
+  .row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+  .row input { flex: 0 1 240px; }
+  .result-line { color: var(--muted); }
 
-  .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
-  footer { color: var(--dim); font-size: 13px; text-align: center; }
+  /* request log */
+  .log-wrap { overflow-x: auto; border-top: 1px solid var(--border); }
+  table { width: 100%; border-collapse: collapse; }
+  th { text-align: left; font-weight: 500; font-size: 12px; color: var(--faint);
+       padding: 8px 16px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+  td { padding: 10px 16px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  tbody tr:last-child td { border-bottom: 0; }
+  .r { text-align: right; white-space: nowrap; }
+  td.time { color: var(--faint); white-space: nowrap; }
+  .prompt { font-weight: 500; }
+  .reply { color: var(--muted); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+           overflow: hidden; }
+  .left { color: var(--faint); font-size: 12px; }
+  .empty td { color: var(--faint); text-align: center; padding: 28px 16px; }
+
+  .tag { display: inline-block; padding: 1px 7px; border-radius: 4px; font-size: 12px; font-weight: 500;
+         white-space: nowrap; background: var(--grey-bg); color: var(--muted); }
+  .tag.exact_hit { background: var(--green-bg); color: var(--green); }
+  .tag.semantic_hit { background: var(--blue-bg); color: var(--blue); }
+  .tag.miss { background: var(--red-bg); color: var(--red); }
+  .tag.throttled { background: var(--amber-bg); color: var(--amber); }
+
+  /* overview */
+  .ratio { font-size: 28px; font-weight: 600; letter-spacing: -0.02em; line-height: 1.2; }
+  .ratio-label { color: var(--muted); font-size: 12px; }
+  .split { display: flex; height: 8px; margin-top: 12px; border-radius: 4px; overflow: hidden;
+           background: var(--sunken); }
+  .split span { display: block; height: 100%; width: 0; }
+  .split .s-exact { background: var(--green); }
+  .split .s-semantic { background: var(--blue); }
+  .split .s-miss { background: var(--red); opacity: 0.75; }
+  .legend { display: flex; gap: 12px; margin-top: 8px; font-size: 12px; color: var(--muted); }
+  .legend i { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 5px; }
+  .legend .l-exact { background: var(--green); }
+  .legend .l-semantic { background: var(--blue); }
+  .legend .l-miss { background: var(--red); opacity: 0.75; }
+  dl { margin: 0; }
+  .kv { display: flex; justify-content: space-between; gap: 12px; padding: 7px 0;
+        border-top: 1px solid var(--border); }
+  .kv:first-child { border-top: 0; padding-top: 0; }
+  .kv:last-child { padding-bottom: 0; }
+  .kv dt { color: var(--muted); }
+  .kv dd { margin: 0; }
+
+  details summary { cursor: pointer; padding: 12px 16px; font-size: 13px; font-weight: 600; list-style: none; }
+  details summary::-webkit-details-marker { display: none; }
+  details summary::after { content: "+"; float: right; color: var(--faint); font-weight: 400; }
+  details[open] summary { border-bottom: 1px solid var(--border); }
+  details[open] summary::after { content: "\2212"; }
+
+  footer { grid-column: 1 / -1; color: var(--faint); font-size: 12px; }
   [hidden] { display: none !important; }
 
-  /* ── right sidebar: city-block analytics ─────────────────── */
-  /*
-    "City blocks" = compact stat tiles in a tight 2-column grid.
-    The sidebar is position:sticky so it stays in view while the
-    user scrolls the chat, but top offset lets it start below the nav.
-    max-height keeps it from exceeding the logo area (roughly the
-    top quarter of the viewport).
-  */
-  .sidebar {
-    position: sticky;
-    top: calc(var(--nav-h) + 12px);
-    display: flex; flex-direction: column; gap: 10px;
-    /* cap height so it stays within the logo/header zone */
-    max-height: 42vh;
-    overflow: hidden;
+  @media (max-width: 900px) {
+    .page { grid-template-columns: minmax(0, 1fr); }
+    .side { position: static; }
   }
-  .sidebar-label {
-    font-size: 11px; font-weight: 700; letter-spacing: .06em;
-    text-transform: uppercase; color: var(--dim);
-    margin: 0;
-  }
-  .blocks {
-    display: grid; grid-template-columns: 1fr 1fr; gap: 6px;
-  }
-  .block {
-    background: var(--panel); border: 1px solid var(--line);
-    border-radius: 7px; padding: 8px 10px;
-    display: flex; flex-direction: column; gap: 2px;
-    min-width: 0;
-  }
-  .block .bval {
-    font-size: 18px; font-weight: 700; line-height: 1.1;
-    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-  }
-  .block .blbl {
-    font-size: 11px; color: var(--dim); line-height: 1.2;
-    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-  }
-
-  /* collapse to single column on narrow screens */
-  @media (max-width: 680px) {
-    .page { grid-template-columns: 1fr; }
-    .sidebar { position: static; max-height: none; }
+  @media (max-width: 560px) {
+    .bar-inner, .page { padding-left: 16px; padding-right: 16px; }
+    .brand small { display: none; }
+    th, td { padding-left: 10px; padding-right: 10px; }
+    .col-sim { display: none; }
   }
 </style>
 </head>
 <body>
 
-<!-- ── health nav bar (centered) ──────────────────────── -->
-<nav id="health">
-  <div class="health-row">
-    <span class="dot" id="health-redis">Redis</span>
-    <span class="dot" id="health-chroma">Chroma</span>
+<header class="bar">
+  <div class="bar-inner">
+    <div class="brand">Sem-Cache-Router<small>gateway console</small></div>
+    <div id="health" aria-label="Dependency status">
+      <span class="chip" id="health-redis">Redis</span>
+      <span class="chip" id="health-chroma">Chroma</span>
+    </div>
   </div>
-</nav>
+</header>
 
 <div class="page">
+  <div class="intro">
+    <h1>Gateway console</h1>
+    <p>An OpenAI-compatible gateway that answers repeated questions from Redis, reworded ones
+       from a vector index, and calls the provider only when neither has an answer.</p>
+  </div>
 
-  <!-- ── center column ──────────────────────────────────── -->
-  <main class="center">
-
-    <!-- title + subtitle, centered -->
-    <div class="hero">
-      <h1>Sem-Cache-Router</h1>
-      <p class="lead">A gateway between an app and an LLM provider. It answers a repeated question
-        from Redis in about a millisecond, a reworded one from ChromaDB by meaning, and only asks
-        the provider when neither has an answer. Ask something below and watch where the answer
-        came from.</p>
-    </div>
-
-    <!-- ask / chat -->
-    <section id="ask">
-      <h2>Ask</h2>
-      <form id="ask-form">
-        <input type="text" id="question" placeholder="Type a question" autocomplete="off" required>
-        <button type="submit" class="primary">Send</button>
-      </form>
-      <div class="presets" id="presets">
-        <button type="button">What is the capital of France?</button>
-        <button type="button">Which city is the capital of France?</button>
-        <button type="button">Is the store open on Sunday?</button>
-        <button type="button">Is the store not open on Sunday?</button>
-      </div>
-      <ol id="answers"></ol>
-    </section>
-
-    <!-- failover controls (shown only when mock vendor is up) -->
-    <section id="failover" hidden>
-      <h2>Failover</h2>
-      <p class="lead">The provider here is the mock vendor API. Break the primary and ask a new
-        question: the circuit breaker sends it to the secondary and the caller never sees an error.</p>
-      <div class="row">
-        <button type="button" id="break">Break primary</button>
-        <button type="button" id="fix">Fix primary</button>
-        <span id="vendor-calls"></span>
-      </div>
-    </section>
-
-    <!-- admin -->
-    <section id="admin">
-      <details>
-        <summary>Admin: empty the cache</summary>
-        <div class="row" style="margin-top: 10px">
-          <input type="password" id="admin-key" placeholder="Admin key" autocomplete="off">
-          <button type="button" id="flush">Empty the cache</button>
+  <div class="main">
+    <section class="panel" id="ask">
+      <div class="panel-head"><h2>Send a request</h2><span class="num">POST /v1/chat/completions</span></div>
+      <div class="panel-body">
+        <form id="ask-form">
+          <input type="text" id="question" placeholder="Ask a question" autocomplete="off" required
+                 aria-label="Question">
+          <button type="submit" class="primary">Send</button>
+        </form>
+        <div class="examples" id="presets">
+          <span>Examples</span>
+          <button type="button">What is the capital of France?</button>
+          <button type="button">Which city is the capital of France?</button>
+          <button type="button">Is the store open on Sunday?</button>
+          <button type="button">Is the store not open on Sunday?</button>
         </div>
-        <p id="flush-result"></p>
+      </div>
+      <div class="log-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Time</th><th>Result</th><th class="r">Latency</th>
+              <th class="r col-sim">Similarity</th><th>Request</th>
+            </tr>
+          </thead>
+          <tbody id="answers">
+            <tr class="empty"><td colspan="5">No requests yet.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="panel" id="limit">
+      <div class="panel-head"><h2>Rate limiting</h2><span>token bucket per API key</span></div>
+      <div class="panel-body">
+        <p class="note">Each key has a token budget that refills over time. New requests beyond it
+           are refused with HTTP 429 and a Retry-After header. Everyone on this page shares one key.</p>
+        <div class="row">
+          <button type="button" id="burst">Run burst test</button>
+          <span class="result-line" id="burst-result"></span>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel" id="failover" hidden>
+      <div class="panel-head"><h2>Failover</h2><span>mock provider</span></div>
+      <div class="panel-body">
+        <p class="note">Fail the primary provider, then send a new request. The circuit breaker
+           routes it to the secondary and the caller sees no error.</p>
+        <div class="row">
+          <button type="button" id="break">Fail primary</button>
+          <button type="button" id="fix">Restore primary</button>
+          <span class="result-line num" id="vendor-calls"></span>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel" id="admin">
+      <details>
+        <summary>Administration</summary>
+        <div class="panel-body">
+          <p class="note">Empty both cache tiers. Requires the admin key.</p>
+          <div class="row">
+            <input type="password" id="admin-key" placeholder="Admin key" autocomplete="off"
+                   aria-label="Admin key">
+            <button type="button" id="flush">Empty cache</button>
+          </div>
+          <p class="result-line" id="flush-result"></p>
+        </div>
       </details>
     </section>
+  </div>
 
-    <footer id="footer">Answers come from whichever provider the gateway is configured with.</footer>
-  </main>
-
-  <!-- ── right sidebar: city-block analytics ────────────── -->
-  <aside class="sidebar" id="numbers">
-    <p class="sidebar-label">Live analytics</p>
-    <div class="blocks" id="stats"></div>
+  <aside class="side" id="numbers">
+    <section class="panel">
+      <div class="panel-head"><h2>Overview</h2><span>refreshes every 2 s</span></div>
+      <div class="panel-body">
+        <div class="ratio num" id="hit-ratio">-</div>
+        <div class="ratio-label">of requests served from cache</div>
+        <div class="split" id="split">
+          <span class="s-exact"></span><span class="s-semantic"></span><span class="s-miss"></span>
+        </div>
+        <div class="legend">
+          <span><i class="l-exact"></i>Exact</span>
+          <span><i class="l-semantic"></i>Semantic</span>
+          <span><i class="l-miss"></i>Miss</span>
+        </div>
+      </div>
+    </section>
+    <section class="panel">
+      <div class="panel-body">
+        <dl id="stats"></dl>
+      </div>
+    </section>
   </aside>
 
+  <footer id="footer">Answers come from whichever provider the gateway is configured with.</footer>
 </div>
 
 <script>
@@ -222,9 +289,14 @@
     return node;
   }
 
-  async function ask(question) {
+  const LABELS = { exact_hit: "Exact hit", semantic_hit: "Semantic hit", miss: "Miss",
+                   throttled: "Rate limited", error: "Error" };
+
+  /* One request to the gateway, described: where the answer came from, or why
+     there was none. A 429 carries the wait in its Retry-After header. */
+  async function send(question) {
     const started = performance.now();
-    let status = "error", answer = "", similarity = null;
+    const result = { status: "error", answer: "", similarity: null, left: null, wait: null };
     try {
       const response = await fetch("/v1/chat/completions", {
         method: "POST",
@@ -232,61 +304,116 @@
         body: JSON.stringify({ model: "gpt-4o-mini", messages: [{ role: "user", content: question }] }),
       });
       const body = await response.json();
+      result.left = response.headers.get("x-ratelimit-remaining-tokens");
       if (response.ok) {
-        status = body.semcache_status;
-        answer = body.choices[0].message.content;
-        similarity = body.semcache_similarity;
+        result.status = body.semcache_status;
+        result.answer = body.choices[0].message.content;
+        result.similarity = body.semcache_similarity;
+      } else if (response.status === 429) {
+        result.status = "throttled";
+        result.wait = response.headers.get("retry-after");
+        result.answer = `Token budget exhausted. Retry after ${result.wait} s.`;
       } else {
-        answer = `${response.status} ${body.error ? body.error.code : ""}`;
+        result.answer = `HTTP ${response.status}${body.error ? ` ${body.error.code}` : ""}`;
       }
     } catch (error) {
-      answer = "no response from the gateway";
+      result.answer = "No response from the gateway.";
     }
-    const item = element("li");
-    item.append(element("div", "q", question), element("div", "", answer));
-    const meta = element("div", "meta");
-    meta.append(element("span", `badge ${status}`, status.replace("_", " ")),
-                element("span", "", `${Math.round(performance.now() - started)} ms`));
-    if (similarity !== null && similarity !== undefined) {
-      meta.append(element("span", "", `similarity ${similarity.toFixed(3)}`));
+    result.ms = Math.round(performance.now() - started);
+    return result;
+  }
+
+  function logRow(question, result) {
+    const row = element("tr");
+    row.append(element("td", "time num", new Date().toLocaleTimeString([], { hour12: false })));
+    const tagCell = element("td");
+    tagCell.append(element("span", `tag ${result.status}`, LABELS[result.status] || result.status));
+    row.append(tagCell);
+    row.append(element("td", "num r", `${result.ms} ms`));
+    row.append(element("td", "num r col-sim",
+      result.similarity === null || result.similarity === undefined ? "" : result.similarity.toFixed(3)));
+    const request = element("td");
+    request.append(element("div", "prompt", question), element("div", "reply", result.answer));
+    if (result.left !== null) {
+      request.append(element("div", "left num", `${result.left} tokens left`));
     }
-    item.append(meta);
-    byId("answers").prepend(item);
+    row.append(request);
+    const log = byId("answers");
+    log.querySelector(".empty")?.remove();
+    log.prepend(row);
+  }
+
+  async function ask(question) {
+    logRow(question, await send(question));
     refresh();
   }
 
-  /* city-block stat definitions ──────────────────────────── */
+  /* Fifteen new questions at once. Random words, so none is a repeat or a
+     rewording of another: a cache hit spends no budget and would hide the limit. */
+  const WORDS = ("apple river engine violin glacier poem harbor tomato satellite ledger cactus " +
+                 "orbit lantern piano canyon tulip quartz bicycle opera falcon meadow volcano").split(" ");
+  function freshQuestion() {
+    const picked = [...WORDS].sort(() => Math.random() - 0.5).slice(0, 5);
+    return `What links ${picked.join(", ")}?`;
+  }
+
+  async function burst() {
+    const out = byId("burst-result");
+    const button = byId("burst");
+    button.disabled = true;
+    out.textContent = "Sending 15 requests...";
+    const results = await Promise.all(Array.from({ length: 15 }, () => send(freshQuestion())));
+    const answered = results.filter((r) => r.status !== "throttled" && r.status !== "error").length;
+    const limited = results.filter((r) => r.status === "throttled");
+    const wait = limited.length ? Math.max(...limited.map((r) => Number(r.wait) || 0)) : 0;
+    out.textContent = limited.length
+      ? `${answered} admitted, ${limited.length} refused with 429. Budget refills in about ${wait} s.`
+      : `All ${answered} admitted. The budget had room for every request.`;
+    button.disabled = false;
+    refresh();
+  }
+
+  const pct = (v) => (v === null || v === undefined ? "-" : `${Math.round(v * 100)}%`);
+  const ms = (v) => (v === null || v === undefined ? "-" : `${Math.round(v)} ms`);
+  const count = (v) => (v === null || v === undefined ? "-" : String(v));
   const STATS = [
-    ["requests_total",         "requests",           (v) => v ?? "-"],
-    ["hit_ratio",              "hit ratio",          (v) => v === null ? "-" : `${Math.round(v * 100)}%`],
-    ["tier1_hits",             "exact (Redis)",      (v) => v ?? "-"],
-    ["tier2_hits",             "semantic (Chroma)",  (v) => v ?? "-"],
-    ["misses",                 "misses",             (v) => v ?? "-"],
-    ["latency_hit_p50_ms",     "hit p50",            (v) => v === null ? "-" : `${Math.round(v)} ms`],
-    ["latency_miss_p50_ms",    "miss p50",           (v) => v === null ? "-" : `${Math.round(v)} ms`],
-    ["total_provider_spend_usd","spend",             (v) => `$${Number(v).toFixed(4)}`],
-    ["breaker_failovers",      "failovers",          (v) => v ?? "-"],
-    ["tier2_unavailable",      "Chroma outages",     (v) => v ?? "-"],
+    ["requests_total", "Requests", count],
+    ["tier1_hits", "Exact hits", count],
+    ["tier2_hits", "Semantic hits", count],
+    ["misses", "Misses", count],
+    ["latency_hit_p50_ms", "Hit latency, p50", ms],
+    ["latency_miss_p50_ms", "Miss latency, p50", ms],
+    ["throttled_requests", "Rate limited (429)", count],
+    ["breaker_failovers", "Failovers", count],
+    ["total_provider_spend_usd", "Provider spend", (v) => `$${Number(v || 0).toFixed(4)}`],
   ];
 
   async function refresh() {
     try {
       const metrics = await (await fetch("/metrics")).json();
+      byId("hit-ratio").textContent = pct(metrics.hit_ratio);
+      const total = (metrics.tier1_hits || 0) + (metrics.tier2_hits || 0) + (metrics.misses || 0);
+      const share = (n) => (total ? `${((n || 0) / total) * 100}%` : "0");
+      const [exact, semantic, miss] = byId("split").children;
+      exact.style.width = share(metrics.tier1_hits);
+      semantic.style.width = share(metrics.tier2_hits);
+      miss.style.width = share(metrics.misses);
       byId("stats").replaceChildren(...STATS.map(([key, label, show]) => {
-        const block = element("div", "block");
-        block.append(element("div", "bval", String(show(metrics[key] ?? null))),
-                     element("div", "blbl", label));
-        return block;
+        const pair = element("div", "kv");
+        pair.append(element("dt", "", label), element("dd", "num", show(metrics[key] ?? null)));
+        return pair;
       }));
       const health = await (await fetch("/health")).json();
       for (const name of ["redis", "chroma"]) {
         const state = health.dependencies[name];
-        const dot = byId(`health-${name}`);
-        dot.className = `dot ${state}`;
-        dot.textContent = `${name === "redis" ? "Redis" : "Chroma"}: ${state}`;
+        const chip = byId(`health-${name}`);
+        chip.className = `chip ${state}`;
+        chip.textContent = `${name === "redis" ? "Redis" : "Chroma"} ${state}`;
       }
     } catch (error) {
-      byId("health-redis").textContent = "gateway not answering";
+      const chip = byId("health-redis");
+      chip.className = "chip unreachable";
+      chip.textContent = "Gateway unreachable";
     }
     refreshMock();
   }
@@ -296,9 +423,9 @@
       const stats = await (await fetch(`${MOCK}/stats`)).json();
       byId("failover").hidden = false;
       byId("footer").textContent =
-        "The provider is the mock vendor API: answers, latency and cost are simulated.";
+        "Provider: mock vendor API. Answers, latency and cost are simulated.";
       byId("vendor-calls").textContent =
-        `provider calls: primary ${stats.openai.calls}, secondary ${stats.anthropic.calls}`;
+        `Primary ${stats.openai.calls} calls, secondary ${stats.anthropic.calls}`;
     } catch (error) {
       byId("failover").hidden = true;
     }
@@ -318,7 +445,7 @@
       method: "DELETE", headers: { "Authorization": `Bearer ${byId("admin-key").value}` },
     });
     if (response.status === 404) {
-      result.textContent = "The admin routes are off: start the gateway with SEMCACHE_ADMIN_API_KEY set.";
+      result.textContent = "Admin routes are disabled. Set SEMCACHE_ADMIN_API_KEY to enable them.";
       return;
     }
     const body = await response.json();
@@ -330,8 +457,9 @@
 
   byId("ask-form").addEventListener("submit", (event) => {
     event.preventDefault();
-    const question = byId("question").value.trim();
-    if (question) ask(question);
+    const input = byId("question");
+    const question = input.value.trim();
+    if (question) { ask(question); input.value = ""; }
   });
   for (const button of byId("presets").querySelectorAll("button")) {
     button.addEventListener("click", () => ask(button.textContent));
@@ -339,6 +467,7 @@
   byId("break").addEventListener("click", () => setPrimary(503));
   byId("fix").addEventListener("click", () => setPrimary(200));
   byId("flush").addEventListener("click", flush);
+  byId("burst").addEventListener("click", burst);
 
   refresh();
   setInterval(refresh, 2000);

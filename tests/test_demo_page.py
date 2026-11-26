@@ -18,7 +18,7 @@ def test_the_page_is_served_at_the_root(client: TestClient) -> None:
 
 def test_every_panel_is_on_the_page(client: TestClient) -> None:
     html = client.get("/").text
-    for panel in ("ask", "numbers", "health", "failover", "admin"):
+    for panel in ("ask", "limit", "numbers", "health", "failover", "admin"):
         assert f'id="{panel}"' in html
 
 
