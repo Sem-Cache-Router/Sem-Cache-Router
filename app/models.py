@@ -26,6 +26,9 @@ class CacheStatus(StrEnum):
     EXACT_HIT = "exact_hit"
     SEMANTIC_HIT = "semantic_hit"
     MISS = "miss"
+    # The caller asked not to use the cache (Cache-Control: no-cache or
+    # no-store), so both tiers were skipped and nothing was stored.
+    BYPASS = "bypass"
 
 
 class ErrorCode(StrEnum):
