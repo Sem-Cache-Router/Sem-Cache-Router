@@ -31,6 +31,8 @@
 from __future__ import annotations
 
 import asyncio
+import functools
+import os
 from array import array
 from collections import OrderedDict
 from collections.abc import Callable, Sequence
@@ -60,16 +62,38 @@ class Embedder(Protocol):
         ...
 
 
-def _load_onnx_minilm() -> EncodeFn:
+def _load_onnx_minilm(threads: int = 0) -> EncodeFn:
     """Construct chromadb's ONNX MiniLM function.
 
     Imported inside the function so that importing this module does not pull in
     onnxruntime, which keeps import time and the smoke test cheap for everyone
     running with Tier 2 switched off.
+
+    threads is how many threads onnxruntime may use for one inference; 0 leaves
+    its default, which is one per core the process can see. That default is wrong
+    inside a container limited to a fraction of a CPU, where the process still
+    sees every core of the host: on a 0.1 CPU limit it starts dozens of threads
+    that fight over a tenth of one core, and one embedding took over a minute. A
+    session built with one thread does the same work in a fraction of that.
     """
     from chromadb.utils.embedding_functions import ONNXMiniLM_L6_V2
 
     model = ONNXMiniLM_L6_V2()
+    if threads > 0:
+        import onnxruntime
+
+        options = onnxruntime.SessionOptions()
+        options.log_severity_level = 3
+        options.intra_op_num_threads = threads
+        options.inter_op_num_threads = 1
+        options.graph_optimization_level = onnxruntime.GraphOptimizationLevel.ORT_ENABLE_ALL
+        # Chroma builds its session lazily and caches it on the instance, so
+        # setting it here replaces the one it would have built.
+        model.__dict__["model"] = onnxruntime.InferenceSession(
+            os.path.join(model.DOWNLOAD_PATH, model.EXTRACTED_FOLDER_NAME, "model.onnx"),
+            providers=["CPUExecutionProvider"],
+            sess_options=options,
+        )
 
     def encode(texts: list[str]) -> Sequence[Sequence[float]]:
         # The function returns float32 numpy arrays. Converting to plain floats
@@ -88,6 +112,7 @@ class OnnxEmbedder:
         loader: Callable[[], EncodeFn] = _load_onnx_minilm,
         *,
         cache_size: int = 1024,
+        threads: int = 0,
     ) -> None:
         """Record the model and how to load it; nothing is loaded here.
 
@@ -101,6 +126,9 @@ class OnnxEmbedder:
         cache_size is how many recent vectors to keep, or 0 to keep none. A
         vector is kept as an array of doubles, about 3 KB, so the default holds
         roughly 3 MB.
+
+        threads limits onnxruntime's threads for the default loader; see
+        _load_onnx_minilm. A loader passed in is used as given.
         """
         if model_name != SUPPORTED_MODEL:
             raise ValueError(
@@ -108,7 +136,9 @@ class OnnxEmbedder:
             )
         if cache_size < 0:
             raise ValueError("cache_size cannot be negative")
-        self._loader = loader
+        self._loader = (
+            functools.partial(_load_onnx_minilm, threads) if loader is _load_onnx_minilm else loader
+        )
         self._encode: EncodeFn | None = None
         self._cache_size = cache_size
         self._cache: OrderedDict[str, array[float]] = OrderedDict()

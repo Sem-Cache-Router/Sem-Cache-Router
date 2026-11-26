@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import threading
 from collections.abc import Sequence
+from typing import Any
 
 import pytest
 
@@ -212,3 +213,59 @@ async def test_a_failed_embedding_is_not_remembered() -> None:
     with pytest.raises(RuntimeError, match="hiccup"):
         await embedder.encode("hello")
     assert len(await embedder.encode("hello")) == MINILM_DIMENSION
+
+
+# --- thread limit -----------------------------------------------------------
+
+
+def test_the_default_loader_is_given_the_thread_limit() -> None:
+    import functools
+
+    from app.cache.embedder import _load_onnx_minilm
+
+    limited = OnnxEmbedder(SUPPORTED_MODEL, threads=1)
+    assert isinstance(limited._loader, functools.partial)
+    assert limited._loader.func is _load_onnx_minilm and limited._loader.args == (1,)
+
+
+def test_a_loader_passed_in_is_used_as_given() -> None:
+    model = RecordingModel()
+
+    def loader() -> EncodeFn:
+        return model
+
+    assert OnnxEmbedder(SUPPORTED_MODEL, loader=loader, threads=1)._loader is loader
+
+
+def test_the_thread_limit_is_off_by_default_and_cannot_be_negative() -> None:
+    from app.config import Settings
+
+    assert Settings(_env_file=None).embedding_threads == 0  # type: ignore[call-arg]
+    with pytest.raises(ValueError):
+        Settings(_env_file=None, embedding_threads=-1)  # type: ignore[call-arg]
+
+
+@pytest.mark.model
+async def test_one_thread_gives_the_same_vectors_and_really_limits_the_session(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import onnxruntime
+
+    from evaluation.adversarial import cosine
+
+    built: list[int] = []
+    real_session = onnxruntime.InferenceSession
+
+    def spy(path: str, **kwargs: Any) -> Any:
+        built.append(kwargs["sess_options"].intra_op_num_threads)
+        return real_session(path, **kwargs)
+
+    free = OnnxEmbedder(SUPPORTED_MODEL)
+    free.load()
+    monkeypatch.setattr(onnxruntime, "InferenceSession", spy)
+    limited = OnnxEmbedder(SUPPORTED_MODEL, threads=1)
+    limited.load()
+
+    assert built == [1]
+    for text in ("What is the capital of France?", "Is the store not open on Sunday?"):
+        assert cosine(await free.encode(text), await limited.encode(text)) > 0.9999

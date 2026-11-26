@@ -82,7 +82,11 @@ async def build_semantic_cache(settings: Settings) -> SemanticCache:
     failing to load them is a broken deployment that should be loud. Chroma is
     a remote service whose outages are transient, so losing it degrades instead.
     """
-    embedder = OnnxEmbedder(settings.embedding_model, cache_size=settings.embedding_cache_size)
+    embedder = OnnxEmbedder(
+        settings.embedding_model,
+        cache_size=settings.embedding_cache_size,
+        threads=settings.embedding_threads,
+    )
     await asyncio.to_thread(embedder.load)
     return SemanticCache(
         chroma_client_factory(settings),

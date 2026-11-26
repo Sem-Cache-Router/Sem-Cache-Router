@@ -8,9 +8,10 @@
 #
 # What the free tier changes, and why each setting is what it is:
 #   - there is no free service to run a Chroma server on, so Chroma runs inside
-#     the gateway, in memory (SEMCACHE_CHROMA_EMBEDDED). Measured locally, the
-#     gateway with the embedding model and 200 cached entries peaks at 290 MB,
-#     inside the free instance's 512 MB
+#     the gateway, in memory (SEMCACHE_CHROMA_EMBEDDED). The gateway with the
+#     embedding model and 200 cached entries peaks at about 290 MB, inside the
+#     free instance's 512 MB, and it is limited to one thread so it keeps up on
+#     the plan's tenth of a CPU
 #   - free Key Value keeps no data on disk, and a free web service sleeps after
 #     15 minutes without traffic, so the cache starts empty after a restart or
 #     a wake up; the first request after sleeping takes about a minute
@@ -43,11 +44,18 @@ services:
       # reserved, and a burst never reached the limit.
       - key: SEMCACHE_STUB_LATENCY_MS
         value: "500"
-      # Off for now. On the free instance's 0.1 CPU the embedding model took
-      # about 290 s to load and 75 to 90 s per new question in a local
-      # simulation, because it starts a thread per host core. It goes back on
-      # once the embedder is limited to one thread; exact hits work either way.
+      # On. The embedding model starts one thread per core it can see, and inside
+      # this plan's tenth of a CPU that is dozens of threads fighting over almost
+      # nothing: a new question took 75 to 90 seconds. One thread does the same
+      # work in 2 to 5 seconds, with identical vectors. Measured in Docker at
+      # --cpus 0.1 --memory 512m: ready after about 2.5 minutes, 286 MB in use.
       - key: SEMCACHE_SEMANTIC_CACHE_ENABLED
+        value: "true"
+      - key: SEMCACHE_EMBEDDING_THREADS
+        value: "1"
+      - key: OMP_NUM_THREADS
+        value: "1"
+      - key: TOKENIZERS_PARALLELISM
         value: "false"
       - key: SEMCACHE_CHROMA_EMBEDDED
         value: "true"
