@@ -37,6 +37,12 @@ services:
           property: connectionString
       - key: SEMCACHE_PRIMARY_PROVIDER
         value: stub
+      # The stub answers after half a second, like a real provider, so requests
+      # in flight overlap and the rate limiter sees a burst as a burst. With an
+      # instant stub on this CPU every request settled before the next one
+      # reserved, and a burst never reached the limit.
+      - key: SEMCACHE_STUB_LATENCY_MS
+        value: "500"
       # Off for now. On the free instance's 0.1 CPU the embedding model took
       # about 290 s to load and 75 to 90 s per new question in a local
       # simulation, because it starts a thread per host core. It goes back on

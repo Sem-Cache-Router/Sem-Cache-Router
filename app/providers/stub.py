@@ -10,6 +10,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import time
 import uuid
 
@@ -49,9 +50,13 @@ class StubProvider(LLMProvider):
         """Return a canned answer, or raise for the first fail_times calls.
 
         Counts every call including the failures, so a test can assert that a
-        cache hit did not reach the provider at all.
+        cache hit did not reach the provider at all. With a latency set, it
+        takes that long to answer, as a real provider would, so requests in
+        flight overlap the way they do against a real one.
         """
         self.call_count += 1
+        if self._latency_ms > 0:
+            await asyncio.sleep(self._latency_ms / 1000)
 
         if self.call_count <= self._fail_times:
             raise ProviderError(
