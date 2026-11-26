@@ -40,6 +40,8 @@ from fastapi import APIRouter, Request, Response
 
 from app.cache.semantic_cache import SemanticHit, Tier2Result
 from app.errors import GatewayError, request_id
+from app.limiter.admission import LimiterUnavailable, Reservation
+from app.limiter.bucket import ReserveStatus
 from app.models import (
     CacheStatus,
     ChatCompletionRequest,
@@ -118,7 +120,7 @@ async def create_chat_completion(
     # Span named "{operation} {model}", as the gen_ai conventions specify.
     with request_span(f"chat {payload.model}", provider=tracer_provider) as span:
         try:
-            return await _serve(payload, request, outcome, start)
+            return await _serve(payload, request, response, outcome, start)
         except GatewayError as exc:
             outcome.error_code = exc.code.value
             raise
@@ -135,9 +137,61 @@ async def create_chat_completion(
             )
 
 
+async def _admit(
+    state: Any, limiter: Any, api_key: str, payload: ChatCompletionRequest, response: Response
+) -> Reservation:
+    """Reserve the request's estimated tokens, or refuse it with the reason.
+
+    Fails closed: a limiter that cannot be reached is a 503, never a free pass,
+    since a budget a caller can escape by waiting for an outage is no budget. A
+    request larger than the whole bucket is a 413 with no retry hint, because no
+    wait would let it through; one that only has to wait is a 429 with the wait.
+    """
+    # The reply is priced the same way with or without the tokenizer: the
+    # request's max_tokens when it sets one, the configured allowance otherwise.
+    reply = state.settings.limiter_default_completion_tokens
+    estimator = getattr(state, "estimator", None)
+    if estimator is not None:
+        estimate = await estimator.estimate(
+            payload.messages, max_tokens=payload.max_tokens, default_completion_tokens=reply
+        )
+    else:
+        estimate = state.provider.estimate_tokens(payload.messages) + (
+            reply if payload.max_tokens is None else payload.max_tokens
+        )
+
+    try:
+        admission = await limiter.reserve(api_key, estimate)
+    except LimiterUnavailable as exc:
+        raise GatewayError(
+            ErrorCode.DEPENDENCY_UNAVAILABLE,
+            "The rate limiter is unreachable, so admission cannot be decided.",
+            status_code=503,
+        ) from exc
+
+    if admission.reservation is not None:
+        response.headers["x-ratelimit-remaining-tokens"] = str(admission.remaining)
+        return admission.reservation
+
+    state.metrics.record_throttled()
+    if admission.status == ReserveStatus.TOO_LARGE:
+        raise GatewayError(
+            ErrorCode.REQUEST_TOO_LARGE,
+            "This request needs more tokens than the budget can ever hold.",
+            status_code=413,
+        )
+    raise GatewayError(
+        ErrorCode.TOKEN_BUDGET_EXCEEDED,
+        "Token budget exhausted for this key.",
+        status_code=429,
+        retry_after_seconds=max(1, admission.retry_after_seconds),
+    )
+
+
 async def _serve(
     payload: ChatCompletionRequest,
     request: Request,
+    response: Response,
     outcome: RequestOutcome,
     start: float,
 ) -> ChatCompletionResponse:
@@ -149,31 +203,22 @@ async def _serve(
     # identity the limiter will charge against.
     api_key = _require_api_key(request)
 
-    # Step 3. Admission control. Guarded rather than absent, so the position of
-    # the check is fixed even though the implementation is not.
+    # Step 3. Admission control, before anything that costs work. None when the
+    # limiter is switched off, and then every request is admitted as before.
     limiter = getattr(state, "limiter", None)
     reservation = None
     if limiter is not None:
-        estimate = state.provider.estimate_tokens(payload.messages)
-        reservation = await limiter.reserve(api_key, estimate)
-        if reservation is None:
-            metrics.record_throttled()
-            raise GatewayError(
-                ErrorCode.TOKEN_BUDGET_EXCEEDED,
-                "Token budget exhausted for this key.",
-                status_code=429,
-                retry_after_seconds=limiter.retry_after(api_key),
-            )
+        reservation = await _admit(state, limiter, api_key, payload, response)
 
     # Step 4. Tier 1.
     with child_span("cache tier1 lookup", state):
         try:
             cached = await state.cache.get(payload.model, payload.messages)
         except Exception as exc:
-            # Fail closed. Admission is a no-op today, so a pass through would be
-            # possible, but the ordering contract is the invariant being protected:
-            # a gateway whose failure behaviour changes once the limiter ships is
-            # one nobody can reason about.
+            # Fail closed: with the cache unreachable the request is refused, the
+            # same with the limiter on or off. Nothing was spent, so the
+            # reservation goes back before the refusal.
+            await _release_for_hit(limiter, reservation)
             raise GatewayError(
                 ErrorCode.DEPENDENCY_UNAVAILABLE,
                 "Cache is unreachable, so admission cannot be decided.",
@@ -222,9 +267,18 @@ async def _serve(
     # span that took two attempts rather than as unexplained latency.
     routed_payload = payload.model_copy(update={"model": routing.model})
     with child_span(f"provider call {routing.model}", state):
-        provider_response = await _complete(state, routed_payload, outcome)
+        try:
+            provider_response = await _complete(state, routed_payload, outcome)
+        except GatewayError:
+            # Nothing was spent, so the caller gets the reservation back.
+            await _release_for_hit(limiter, reservation)
+            raise
 
-    # Step 8. Write through and reconcile.
+    # Step 8. Settle, then write through. Settled first because the tokens are
+    # spent whether or not the cache write that follows succeeds.
+    if limiter is not None and reservation is not None:
+        await limiter.reconcile(reservation, provider_response.usage.total_tokens)
+
     body = _to_body(provider_response, payload.model)
 
     try:
@@ -244,9 +298,6 @@ async def _serve(
         ) from exc
 
     await _write_tier2(state, payload, entry.entry_id, body)
-
-    if limiter is not None and reservation is not None:
-        await limiter.reconcile(reservation, provider_response.usage.total_tokens)
 
     metrics.record_miss()
     metrics.add_spend(provider_response.cost_usd)
@@ -297,10 +348,11 @@ async def _complete(
 
 
 async def _release_for_hit(limiter: Any, reservation: Any) -> None:
-    """Return a reservation in full when a cache served the request.
+    """Return a reservation in full when nothing was spent on the provider.
 
-    A hit from either tier spends no provider tokens, so nothing of the estimate
-    was used. Shared by both hit paths so the rule lives in one place.
+    A hit from either tier spends no provider tokens, and neither does a
+    provider call that failed, so nothing of the estimate was used. Shared by
+    every such path so the rule lives in one place.
     """
     if limiter is not None and reservation is not None:
         await limiter.release(reservation)

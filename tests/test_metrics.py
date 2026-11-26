@@ -310,17 +310,16 @@ def test_throttled_request_wires_counter() -> None:
 
     from app.cache.exact_cache import ExactCache
     from app.config import Settings
+    from app.limiter.admission import Admission
+    from app.limiter.bucket import ReserveStatus
     from app.main import create_app
     from app.providers.stub import StubProvider
 
     class RejectingLimiter:
         """Always rejects, so the throttle counter fires."""
 
-        async def reserve(self, key: str, estimate: int) -> None:
-            return None
-
-        def retry_after(self, key: str) -> int:
-            return 10
+        async def reserve(self, key: str, estimate: int) -> Admission:
+            return Admission(ReserveStatus.DENIED, None, 0, 10)
 
     app = create_app()
     redis = aioredis.FakeRedis(decode_responses=True)

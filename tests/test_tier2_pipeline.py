@@ -16,6 +16,8 @@ from fastapi.testclient import TestClient
 from app.cache.exact_cache import ExactCache
 from app.cache.semantic_cache import SemanticCache
 from app.config import Settings
+from app.limiter.admission import Admission, Reservation
+from app.limiter.bucket import ReserveStatus
 from app.main import create_app
 from app.models import Message
 from app.providers.stub import StubProvider
@@ -33,23 +35,20 @@ def body(content: str, model: str = MODEL) -> dict[str, Any]:
 
 
 class FakeLimiter:
-    """Records what the route does with a reservation."""
+    """Admits everything and records what the route does with each reservation."""
 
     def __init__(self) -> None:
-        self.released: list[str] = []
-        self.reconciled: list[str] = []
+        self.released: list[Reservation] = []
+        self.reconciled: list[Reservation] = []
 
-    async def reserve(self, api_key: str, estimate: int) -> str:
-        return f"reservation-{len(self.released) + len(self.reconciled)}"
+    async def reserve(self, api_key: str, estimate: int) -> Admission:
+        return Admission(ReserveStatus.ADMITTED, Reservation(api_key, estimate), 1000, 0)
 
-    async def release(self, reservation: str) -> None:
+    async def release(self, reservation: Reservation) -> None:
         self.released.append(reservation)
 
-    async def reconcile(self, reservation: str, actual: int) -> None:
+    async def reconcile(self, reservation: Reservation, actual: int) -> None:
         self.reconciled.append(reservation)
-
-    def retry_after(self, api_key: str) -> int:
-        return 1
 
 
 class Tier2Harness:
