@@ -24,5 +24,10 @@ router = APIRouter(tags=["demo"])
 
 @router.get("/", include_in_schema=False)
 async def demo_page() -> FileResponse:
-    """Serve the showcase page."""
-    return FileResponse(PAGE, media_type="text/html")
+    """Serve the showcase page, telling browsers to check for a newer one every time.
+
+    Without it a browser may keep showing an old copy after a deployment, as
+    one did after the redesign; with no-cache it revalidates, and the file's
+    ETag keeps that cheap when nothing changed.
+    """
+    return FileResponse(PAGE, media_type="text/html", headers={"Cache-Control": "no-cache"})
