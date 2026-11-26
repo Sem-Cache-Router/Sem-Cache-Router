@@ -18,14 +18,15 @@ def test_the_page_is_served_at_the_root(client: TestClient) -> None:
 
 def test_every_panel_is_on_the_page(client: TestClient) -> None:
     html = client.get("/").text
-    for panel in ("ask", "limit", "numbers", "health", "failover", "admin"):
+    for panel in ("ask", "compare", "limit", "numbers", "health", "failover", "admin", "flow"):
         assert f'id="{panel}"' in html
 
 
 def test_the_page_calls_only_endpoints_the_gateway_has(client: TestClient) -> None:
     html = client.get("/").text
     called = set(re.findall(r'fetch\("(/[a-z0-9/._-]*)"', html))
-    assert called == {"/v1/chat/completions", "/metrics", "/health", "/admin/cache"}
+    assert called == {"/v1/chat/completions", "/metrics", "/health", "/admin/cache",
+                      "/config", "/benchmark"}
     for path in ("/metrics", "/health"):
         assert client.get(path).status_code == 200
 
@@ -51,3 +52,19 @@ def test_the_api_still_answers_beside_the_page(client: TestClient) -> None:
     response = client.post("/v1/chat/completions", json=body,
                            headers={"Authorization": "Bearer demo"})
     assert response.status_code == 200
+
+
+def test_the_page_has_its_three_views() -> None:
+    html = PAGE.read_text()
+    for view in ("console", "benchmark", "configuration"):
+        assert f'data-view="{view}"' in html and f'data-tab="{view}"' in html
+
+
+def test_the_comparison_skips_the_cache_with_the_standard_header() -> None:
+    script = PAGE.read_text().split("<script>")[1].split("</script>")[0]
+    assert 'headers["Cache-Control"] = "no-cache"' in script
+
+
+def test_browsers_are_told_to_check_for_a_newer_page(client: TestClient) -> None:
+    # A cached old page outlived a redesign once; no-cache makes the browser revalidate.
+    assert client.get("/").headers["cache-control"] == "no-cache"
