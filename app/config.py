@@ -106,6 +106,12 @@ class Settings(BaseSettings):
     # load, so this saves real work for about 3 KB per entry.
     embedding_cache_size: int = Field(default=1024, ge=0)
 
+    # Threads onnxruntime may use for one embedding, or 0 for its default of one per
+    # core the process can see. Set it to 1 on a host that limits the container to a
+    # fraction of a CPU, such as Render's free plan, where the default oversubscribes
+    # the CPU badly. See app/cache/embedder.py.
+    embedding_threads: int = Field(default=0, ge=0)
+
     # Tier 2. Off by default, so the gateway still starts and serves when no
     # vector store is running, which is the situation for the test suite and
     # for anyone running it locally on the stub provider. Compose turns it on.
