@@ -166,10 +166,13 @@ class Settings(BaseSettings):
     metrics_latency_window: int = Field(default=10_000, gt=0)
 
     # Caller authentication. The key is the identity a token budget is charged
-    # against, so it cannot be optional once the limiter exists. Until then
-    # there is nothing to authorise against, and any non-empty bearer token is
-    # accepted rather than validated against a key store that does not exist.
+    # against. With no allowlist any non-empty bearer token is accepted, which
+    # suits a demo and local use; with one, only the listed keys are.
     require_api_key: bool = True
+
+    # Comma separated caller keys that are accepted, or unset to accept any.
+    # Kept out of the settings repr, since these are credentials.
+    allowed_api_keys: str | None = Field(default=None, repr=False)
 
     # The key for the cache admin endpoints (stats and flush). Unset means the
     # endpoints do not exist and answer 404, because emptying the cache in the
@@ -289,6 +292,13 @@ class Settings(BaseSettings):
         if self.secondary_provider is not None and self.secondary_provider == self.primary_provider:
             raise ValueError("secondary_provider must differ from primary_provider")
         return self
+
+    @property
+    def api_key_allowlist(self) -> frozenset[str]:
+        """The accepted caller keys, or an empty set when any key is accepted."""
+        if not self.allowed_api_keys:
+            return frozenset()
+        return frozenset(key.strip() for key in self.allowed_api_keys.split(",") if key.strip())
 
     @property
     def chroma_endpoint(self) -> tuple[str, int, bool]:
