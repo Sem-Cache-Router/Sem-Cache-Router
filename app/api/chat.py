@@ -210,6 +210,80 @@ async def _serve(
     if limiter is not None:
         reservation = await _admit(state, limiter, api_key, payload, response)
 
+    # Steps 4 and 5, unless the caller asked to skip the cache.
+    bypass = _bypasses_cache(request)
+    if not bypass:
+        cached_response = await _lookup(state, payload, outcome, limiter, reservation, start)
+        if cached_response is not None:
+            return cached_response
+
+    # Step 6. Model routing. The routing result controls which model the provider
+    # is asked for; the cache key still uses the model the caller requested.
+    routing = choose_model(payload.model, payload.messages, state.settings)
+    outcome.routed_model = routing.model
+    outcome.routing_reason = routing.reason
+    if routing.reason == "routed_cheap":
+        metrics.record_routed_cheap()
+    else:
+        metrics.record_routed_unchanged()
+
+    # Steps 6 and 7. The provider call, through its breaker, with failover. The
+    # child span covers the whole of it, so a failover shows in the trace as one
+    # span that took two attempts rather than as unexplained latency.
+    routed_payload = payload.model_copy(update={"model": routing.model})
+    with child_span(f"provider call {routing.model}", state):
+        try:
+            provider_response = await _complete(state, routed_payload, outcome)
+        except GatewayError:
+            # Nothing was spent, so the caller gets the reservation back.
+            await _release_for_hit(limiter, reservation)
+            raise
+
+    # Step 8. Settle, then write through. Settled first because the tokens are
+    # spent whether or not the cache write that follows succeeds.
+    if limiter is not None and reservation is not None:
+        await limiter.reconcile(reservation, provider_response.usage.total_tokens)
+
+    body = _to_body(provider_response, payload.model)
+    metrics.add_spend(provider_response.cost_usd)
+    outcome.input_tokens = provider_response.usage.prompt_tokens
+    outcome.output_tokens = provider_response.usage.completion_tokens
+    outcome.cost_usd = provider_response.cost_usd
+
+    if bypass:
+        # Asked not to use the cache: nothing is stored, and the request is
+        # counted apart from misses so the hit ratio stays honest.
+        metrics.record_bypass()
+        outcome.cache_status = CacheStatus.BYPASS.value
+        return _from_cached(body, payload.model, CacheStatus.BYPASS)
+
+    await _store(state, payload, provider_response, body)
+    metrics.record_miss()
+    metrics.record_latency(time.monotonic() - start, hit=False)
+    outcome.cache_status = CacheStatus.MISS.value
+    return _from_cached(body, payload.model, CacheStatus.MISS)
+
+
+def _bypasses_cache(request: Request) -> bool:
+    """Whether the caller asked to skip the cache, with Cache-Control: no-cache or no-store.
+
+    The standard header, so any HTTP client can ask for it. Used to compare the
+    cache against a direct provider call for the same question.
+    """
+    directives = request.headers.get("cache-control", "").lower()
+    return any(part.strip() in ("no-cache", "no-store") for part in directives.split(","))
+
+
+async def _lookup(
+    state: Any,
+    payload: ChatCompletionRequest,
+    outcome: RequestOutcome,
+    limiter: Any,
+    reservation: Any,
+    start: float,
+) -> ChatCompletionResponse | None:
+    """Steps 4 and 5: answer from Tier 1, then Tier 2, or None to go to the provider."""
+    metrics = state.metrics
     # Step 4. Tier 1.
     with child_span("cache tier1 lookup", state):
         try:
@@ -251,36 +325,14 @@ async def _serve(
             CacheStatus.SEMANTIC_HIT,
             similarity=semantic.similarity,
         )
+    return None
 
-    # Step 6. Model routing. The routing result controls which model the provider
-    # is asked for; the cache key still uses the model the caller requested.
-    routing = choose_model(payload.model, payload.messages, state.settings)
-    outcome.routed_model = routing.model
-    outcome.routing_reason = routing.reason
-    if routing.reason == "routed_cheap":
-        metrics.record_routed_cheap()
-    else:
-        metrics.record_routed_unchanged()
 
-    # Steps 6 and 7. The provider call, through its breaker, with failover. The
-    # child span covers the whole of it, so a failover shows in the trace as one
-    # span that took two attempts rather than as unexplained latency.
-    routed_payload = payload.model_copy(update={"model": routing.model})
-    with child_span(f"provider call {routing.model}", state):
-        try:
-            provider_response = await _complete(state, routed_payload, outcome)
-        except GatewayError:
-            # Nothing was spent, so the caller gets the reservation back.
-            await _release_for_hit(limiter, reservation)
-            raise
-
-    # Step 8. Settle, then write through. Settled first because the tokens are
-    # spent whether or not the cache write that follows succeeds.
-    if limiter is not None and reservation is not None:
-        await limiter.reconcile(reservation, provider_response.usage.total_tokens)
-
-    body = _to_body(provider_response, payload.model)
-
+async def _store(
+    state: Any, payload: ChatCompletionRequest, provider_response: ProviderResponse,
+    body: dict[str, Any],
+) -> None:
+    """Write a provider answer through to both tiers. An unreachable Tier 1 is a 503."""
     try:
         entry = await state.cache.set(
             payload.model,
@@ -296,17 +348,7 @@ async def _serve(
             "Cache is unreachable, so the response could not be stored.",
             status_code=503,
         ) from exc
-
     await _write_tier2(state, payload, entry.entry_id, body)
-
-    metrics.record_miss()
-    metrics.add_spend(provider_response.cost_usd)
-    metrics.record_latency(time.monotonic() - start, hit=False)
-    outcome.cache_status = CacheStatus.MISS.value
-    outcome.input_tokens = provider_response.usage.prompt_tokens
-    outcome.output_tokens = provider_response.usage.completion_tokens
-    outcome.cost_usd = provider_response.cost_usd
-    return _from_cached(body, payload.model, CacheStatus.MISS)
 
 
 async def _complete(
