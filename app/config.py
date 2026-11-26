@@ -72,6 +72,12 @@ class Settings(BaseSettings):
     # SEMCACHE_PRIMARY_PROVIDER=openai in its environment.
     primary_provider: ProviderName = "stub"
 
+    # How long the stub takes to answer, in milliseconds. Zero answers at once,
+    # which suits tests. A demonstration sets a few hundred, so the stub behaves
+    # like a real provider: requests in flight overlap, and a burst runs into the
+    # rate limiter the way it would against a real vendor.
+    stub_latency_ms: float = Field(default=0.0, ge=0)
+
     # The provider to fail over to when the primary is unhealthy, or None for no
     # failover. Opt in rather than defaulting to a real vendor: with the default
     # primary being the stub, a default secondary of anthropic would demand a key
