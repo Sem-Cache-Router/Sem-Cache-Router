@@ -45,7 +45,7 @@ def build_provider(
     fails its first request.
     """
     if name == "stub":
-        return StubProvider()
+        return StubProvider(latency_ms=settings.stub_latency_ms)
     if http_client is None:
         raise ValueError(f"provider {name!r} needs an HTTP client")
     if name == "openai":
