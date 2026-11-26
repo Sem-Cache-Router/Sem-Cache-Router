@@ -71,7 +71,7 @@ no_implicit_optional = true
 # the real problems among the noise.
 
 [[tool.mypy.overrides]]
-module = ["fakeredis.*", "opentelemetry.*"]
+module = ["fakeredis.*", "opentelemetry.*", "onnxruntime.*"]
 ignore_missing_imports = true
 
 
