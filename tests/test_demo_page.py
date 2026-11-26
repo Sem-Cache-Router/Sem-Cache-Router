@@ -51,3 +51,8 @@ def test_the_api_still_answers_beside_the_page(client: TestClient) -> None:
     response = client.post("/v1/chat/completions", json=body,
                            headers={"Authorization": "Bearer demo"})
     assert response.status_code == 200
+
+
+def test_browsers_are_told_to_check_for_a_newer_page(client: TestClient) -> None:
+    # A cached old page outlived a redesign once; no-cache makes the browser revalidate.
+    assert client.get("/").headers["cache-control"] == "no-cache"
