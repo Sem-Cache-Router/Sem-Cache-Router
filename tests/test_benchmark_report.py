@@ -110,3 +110,21 @@ def test_main_writes_the_report_and_its_chart(tmp_path: Path) -> None:
     report.main([*map(str, _files(tmp_path, DIRECT, LOOSE)), "--out", str(out)])
     assert out.read_text().startswith("# Benchmark report")
     assert (tmp_path / "report.svg").read_text().startswith("<svg")
+
+
+def test_the_summary_is_plain_numbers_with_savings_against_the_baseline() -> None:
+    summary = report.summary([DIRECT, LOOSE, STRICT])
+    assert summary["simulated"] is True and summary["commits"] == ["abc1234"]
+    rows = {row["label"]: row for row in summary["runs"]}
+    assert rows["t0.75"]["hit_ratio"] == 0.75
+    assert rows["t0.75"]["cost_saved"] == pytest.approx(0.75)
+    assert rows["t0.75"]["negation_false_hit_rate"] == 1.0
+    assert rows["direct"]["hit_p50_ms"] is None and rows["direct"]["miss_p50_ms"] == 800.0
+    assert report.summary([STRICT])["runs"][0]["cost_saved"] is None
+
+
+def test_main_can_also_write_the_summary_as_json(tmp_path: Path) -> None:
+    out, numbers = tmp_path / "report.md", tmp_path / "numbers.json"
+    report.main([*map(str, _files(tmp_path, DIRECT, LOOSE)), "--out", str(out),
+                 "--json", str(numbers)])
+    assert json.loads(numbers.read_text())["runs"][1]["label"] == "t0.75"
