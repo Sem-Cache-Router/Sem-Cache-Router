@@ -28,12 +28,17 @@ MODEL = "gpt-4o-mini"
 
 @pytest.fixture
 def tripping(client: TestClient) -> tuple[TestClient, ScriptedProvider, ScriptedProvider]:
-    """A two provider router whose breakers open on the first failure."""
+    """A two provider router whose breakers open on the first failure.
+
+    The backoff is a minute, so an open breaker stays open for the whole test.
+    With the default second on the real clock, a slow machine could let one
+    pass between two requests, and the breaker would rightly go half open.
+    """
     primary, secondary = ScriptedProvider("primary"), ScriptedProvider("secondary")
     client.app.state.router = FailoverRouter(  # type: ignore[attr-defined]
         [
-            ProviderSlot(primary, CircuitBreaker(failure_threshold=1, window_seconds=60)),
-            ProviderSlot(secondary, CircuitBreaker(failure_threshold=1, window_seconds=60)),
+            ProviderSlot(primary, CircuitBreaker(failure_threshold=1, base_backoff=60.0)),
+            ProviderSlot(secondary, CircuitBreaker(failure_threshold=1, base_backoff=60.0)),
         ]
     )
     return client, primary, secondary
