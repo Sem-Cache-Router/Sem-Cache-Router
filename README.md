@@ -75,6 +75,20 @@ The true cost of a response isn't known until the call comes back, so admission 
 
 Refill and reservation happen inside a single Lua script so the whole read, refill, compare and write sequence is atomic. Doing it in Python would leave a window where two concurrent callers both read a sufficient balance and both proceed, which is the exact bug a rate limiter exists to prevent.
 
+What a caller sees when the limiter is on (`SEMCACHE_LIMITER_ENABLED=true`):
+
+| Situation | Response |
+| - | - |
+| Within budget | 200, with `X-RateLimit-Remaining-Tokens` |
+| Over budget for now | 429 `TOKEN_BUDGET_EXCEEDED`, with `Retry-After` in seconds |
+| Larger than the whole bucket | 413 `REQUEST_TOO_LARGE`, no retry hint, since no wait helps |
+| Redis unreachable at admission | 503 `DEPENDENCY_UNAVAILABLE`: the limiter fails closed |
+| Key not on the allowlist | 401 `INVALID_API_KEY`, when `SEMCACHE_ALLOWED_API_KEYS` is set |
+
+The two failure rules are opposite on purpose. A limiter that cannot be reached at admission refuses the request, because a budget a caller can escape by waiting for an outage is no budget. A limiter that cannot be reached afterwards, to give tokens back or settle, leaves the request alone, because the caller already has their answer. A failed provider call or an unreachable cache gives the reservation back, since nothing was spent.
+
+`scripts/demo-limiter.sh` shows it in a few seconds: a burst of new questions against a small budget, the 429s with their wait, and admission again once it refills. The showcase page has a "Send a burst" button that does the same.
+
 ## Failover and degradation
 
 Each provider gets a circuit breaker with three states. Closed passes traffic and counts failures. Once failures cross a threshold inside a window, the breaker opens and rejects immediately without attempting a call, so a struggling provider stops receiving traffic it can't serve. After a backoff it moves to half open and allows a few probe requests through. One success closes it. One failure sends it back to open with a longer backoff.
@@ -360,8 +374,11 @@ Every value is read from the environment. There are no constants in code, so a b
 | `SEMCACHE_CHROMA_HOST` | `http://chromadb:8000` | Tier 2 vector index. |
 | `SEMCACHE_SIMILARITY_THRESHOLD` | `0.90` | Theta. A Tier 2 hit needs a score at or above this. |
 | `SEMCACHE_CACHE_TTL_SECONDS` | `3600` | Entry lifetime, applied at write time, never extended on a hit. |
+| `SEMCACHE_LIMITER_ENABLED` | `false` | Turns admission control on. Off, every request is admitted. |
 | `SEMCACHE_BUCKET_CAPACITY` | `100000` | Maximum tokens a caller may hold. |
 | `SEMCACHE_BUCKET_REFILL_RATE` | `1000` | Tokens restored per second. Also derives the retry hint on a 429. |
+| `SEMCACHE_LIMITER_DEFAULT_COMPLETION_TOKENS` | `256` | Reply tokens reserved when a request sets no `max_tokens`. |
+| `SEMCACHE_ALLOWED_API_KEYS` | none | Comma separated caller keys that are accepted. Unset accepts any key. |
 | `SEMCACHE_PRIMARY_PROVIDER` | `stub` | Provider tried first: `stub`, `openai` or `anthropic`. The stub needs no key and no network. |
 | `SEMCACHE_SECONDARY_PROVIDER` | none | Failover target. Unset means no failover. Must differ from the primary, and the gateway will not start without its key. |
 | `SEMCACHE_SECONDARY_MODEL` | provider default | The model the secondary is called with, since one vendor's model name means nothing to another. |
