@@ -30,6 +30,7 @@
 
 from __future__ import annotations
 
+import hmac
 import logging
 import time
 import uuid
@@ -62,20 +63,29 @@ log = logging.getLogger(__name__)
 def _require_api_key(request: Request) -> str:
     """Return the caller's key, or refuse the request.
 
-    The key is the identity a token budget is charged against, so it cannot be
-    optional once the limiter exists. Until then there is nothing to authorise
-    against, and any non-empty bearer token is accepted rather than checked
-    against a key store that does not exist yet. That is a deliberate gap, not
-    an oversight, and it closes when the limiter lands.
+    The key is the identity a token budget is charged against. With an
+    allowlist configured only those keys are accepted, compared in constant
+    time, and any other is a 401 before the request does any work; without one
+    any non-empty bearer token is accepted.
     """
     settings = request.app.state.settings
     header = request.headers.get("authorization", "")
     token = header.removeprefix("Bearer ").strip() if header.startswith("Bearer ") else ""
 
-    if settings.require_api_key and not token:
+    allowed = settings.api_key_allowlist
+    # An allowlist always requires a key, whatever require_api_key says.
+    if not token and (settings.require_api_key or allowed):
         raise GatewayError(
             ErrorCode.MISSING_API_KEY,
             "No caller API key supplied. Send an Authorization: Bearer header.",
+            status_code=401,
+        )
+    if allowed and not any(
+        hmac.compare_digest(token.encode(), key.encode()) for key in allowed
+    ):
+        raise GatewayError(
+            ErrorCode.INVALID_API_KEY,
+            "That API key is not recognised.",
             status_code=401,
         )
     return token or "anonymous"
