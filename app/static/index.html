@@ -144,6 +144,24 @@
   .tag.bypass { background: var(--violet-bg); color: var(--violet); }
   .tag.throttled { background: var(--amber-bg); color: var(--amber); }
 
+  /* weak spots */
+  .cases { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 12px; margin-top: 12px; }
+  .case { border: 1px solid var(--border); border-radius: 6px; padding: 12px; display: flex;
+          flex-direction: column; gap: 8px; }
+  .case h3 { margin: 0; font-size: 13px; font-weight: 600; display: flex; justify-content: space-between; gap: 8px; }
+  .case .score { font-weight: 500; color: var(--faint); }
+  .case .why { margin: 0; color: var(--muted); font-size: 12px; }
+  .case .qa { font-size: 12px; color: var(--faint); }
+  .case .qa b { display: block; color: var(--text); font-weight: 500; font-size: 13px; margin-bottom: 4px; }
+  .verdict { padding: 8px 10px; border-radius: 6px; font-size: 12px; background: var(--grey-bg); color: var(--muted); }
+  .verdict.bad { background: var(--red-bg); color: var(--red); }
+  .verdict.good { background: var(--green-bg); color: var(--green); }
+  .verdict.off { background: var(--amber-bg); color: var(--amber); }
+  .case button { align-self: flex-start; height: 28px; font-size: 12px; }
+  .summary-line { margin-top: 12px; }
+  .hardening { margin: 12px 0 0; padding-left: 18px; color: var(--muted); }
+  .hardening li { margin: 2px 0; }
+
   /* comparison */
   .compare { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 12px; }
   .card { border: 1px solid var(--border); border-radius: 6px; padding: 12px; }
@@ -316,6 +334,28 @@
           </div>
         </section>
 
+        <section class="panel" id="weak">
+          <div class="panel-head"><h2>Where the semantic cache can be fooled</h2><span id="weak-state">complex prompts</span></div>
+          <div class="panel-body">
+            <p class="note">Each case asks one question, then a second that means something different.
+               If the cache answers the second with the first one's answer, that is a false hit: a
+               wrong answer, served fast. The score is the similarity the embedding model gives the
+               pair, measured offline. Nothing here is hidden: these are the failures of the design.</p>
+            <div class="row">
+              <button type="button" class="primary" id="weak-all">Run all cases</button>
+              <span class="result-line" id="weak-summary"></span>
+            </div>
+            <div class="cases" id="cases"></div>
+            <p class="note summary-line">What reduces the risk, and what does not:</p>
+            <ul class="hardening">
+              <li>The negation guard (<span class="num">SEMCACHE_SEMANTIC_NEGATION_GUARD</span>) closes only the first case.</li>
+              <li>A higher threshold does not help: every wrong pair here scores above 0.92, while real paraphrases score about 0.90 to 0.94.</li>
+              <li>Send <span class="num">Cache-Control: no-cache</span> for prompts where a wrong answer is costly.</li>
+              <li>Not built yet: compare numbers and names before serving a hit, or have a second model verify the match.</li>
+            </ul>
+          </div>
+        </section>
+
         <section class="panel" id="limit">
           <div class="panel-head"><h2>Rate limiting</h2><span>token bucket per API key</span></div>
           <div class="panel-body">
@@ -417,6 +457,79 @@
 
   <footer id="footer">Answers come from whichever provider the gateway is configured with.</footer>
 </div>
+
+<script type="application/json" id="weak-spots-data">
+{
+  "context": "Acme Corp support handbook, section 4. Customers may return unused items within 30 days of delivery for a full refund, provided the original packaging is intact. Refunds are issued to the original payment method within 5 to 7 business days of the warehouse receiving the parcel. Items marked final sale, gift cards and digital downloads cannot be returned. Shipping costs are refunded only when the item arrived damaged or the wrong item was sent. Customers in the European Union have an additional 14 day statutory withdrawal period. Orders over 500 dollars require a signature on delivery, and a missing signature voids the delivery guarantee. Support is available Monday to Friday, 9am to 6pm Eastern, and on Saturdays from 10am to 2pm. Escalations go to a team lead within one business day. Warranty claims need the original receipt and a serial number, and are handled separately from returns. Store credit never expires, but it cannot be exchanged for cash.",
+  "cases": [
+    {
+      "id": "negation",
+      "title": "Negation",
+      "a": "Is the store open on Sunday?",
+      "b": "Is the store not open on Sunday?",
+      "score": 0.972,
+      "why": "One small word flips the meaning, but the model reads both as the same topic."
+    },
+    {
+      "id": "number",
+      "title": "A number changes the policy",
+      "a": "Is a refund allowed within 30 days of purchase?",
+      "b": "Is a refund allowed within 300 days of purchase?",
+      "score": 0.922,
+      "why": "30 and 300 look alike to the model, so a yes can be served for a no."
+    },
+    {
+      "id": "dose",
+      "title": "A number changes the safety answer",
+      "a": "Is 5 mg of this medicine safe for a child?",
+      "b": "Is 50 mg of this medicine safe for a child?",
+      "score": 0.94,
+      "why": "The costliest kind of wrong answer: ten times the dose, served the answer for the small one."
+    },
+    {
+      "id": "roles",
+      "title": "Who does what to whom",
+      "a": "Does Alice report to Bob?",
+      "b": "Does Bob report to Alice?",
+      "score": 0.988,
+      "why": "Same words, swapped roles. The model sees a bag of the same words."
+    },
+    {
+      "id": "direction",
+      "title": "Direction",
+      "a": "What is the flight time from Delhi to London?",
+      "b": "What is the flight time from London to Delhi?",
+      "score": 0.996,
+      "why": "Reversed direction scores higher than a true paraphrase does."
+    },
+    {
+      "id": "units",
+      "title": "Units",
+      "a": "Convert 100 degrees Celsius to Fahrenheit.",
+      "b": "Convert 100 degrees Fahrenheit to Celsius.",
+      "score": 0.992,
+      "why": "Opposite conversions with an identical vocabulary, and opposite answers."
+    },
+    {
+      "id": "long",
+      "title": "A long prompt hides the question",
+      "a": "Question: am I eligible for a refund after 10 days?",
+      "b": "Question: am I eligible for a refund after 60 days?",
+      "score": 0.998,
+      "long": true,
+      "why": "With a document in the prompt, as in retrieval apps, the question is a few words in hundreds. Its similarity is higher than a real paraphrase gets."
+    },
+    {
+      "id": "control",
+      "title": "Control: a different subject",
+      "a": "What is the capital of France?",
+      "b": "What is the capital of Germany?",
+      "score": 0.663,
+      "why": "Changing the entity moves the vector a lot, so the cache is not fooled. It fails on small changes, not on all of them."
+    }
+  ]
+}
+</script>
 
 <script>
   const MOCK = `${location.protocol}//${location.hostname}:8002`;
@@ -593,6 +706,119 @@
     refresh();
   }
 
+  /* ---------- weak spots ---------- */
+
+  const WEAK = JSON.parse(byId("weak-spots-data").textContent);
+  let chromaState = null;     // from /health, set by refresh()
+  let threshold = null;       // from /config
+  let guard = null;
+
+  const questionOf = (c, which) => (c.long ? `${WEAK.context} ${c[which]}` : c[which]);
+  const labelOf = (c, which) => (c.long ? `[handbook] ${c[which]}` : c[which]);
+
+  function buildCases() {
+    byId("cases").replaceChildren(...WEAK.cases.map((c) => {
+      const card = element("div", "case");
+      card.id = `case-${c.id}`;
+      const head = element("h3");
+      head.append(element("span", "", c.title), element("span", "score num", `score ${c.score.toFixed(3)}`));
+      const qa = element("div", "qa");
+      const first = element("b", "", c.a);
+      const second = element("b", "", c.b);
+      qa.append(element("span", "", c.long ? "Handbook in the prompt, asked first" : "Asked first"), first,
+                element("span", "", "Then asked"), second);
+      const run = element("button", "", "Run this case");
+      run.addEventListener("click", () => runCase(c));
+      card.append(head, element("p", "why", c.why), qa, run, element("div", "verdict", "Not run yet."));
+      return card;
+    }));
+  }
+
+  /* What a result means for one case, in words. */
+  function judge(c, trap) {
+    if (trap.status === "semantic_hit") {
+      return ["bad", `Wrong answer served. The second question was answered with the first one's answer ` +
+                     `(similarity ${trap.similarity.toFixed(3)}).`, true];
+    }
+    if (trap.status === "miss") {
+      if (chromaState !== "ok") {
+        const would = threshold !== null && c.score >= threshold;
+        return ["off", `The semantic cache is off on this server, so this was a plain miss. ` +
+                       (would ? `On a gateway with it on at threshold ${threshold}, the measured ${c.score.toFixed(3)} ` +
+                                `would have served the wrong answer.`
+                              : `Measured ${c.score.toFixed(3)}, below the threshold, so it would be a miss anyway.`), false];
+      }
+      return ["good", guard && c.id === "negation"
+        ? "Blocked by the negation guard: treated as a new question, which is correct."
+        : "Treated as a new question: correct for this pair.", false];
+    }
+    if (trap.status === "exact_hit") {
+      return ["", "Already stored from an earlier run, so it was answered with its own stored answer. " +
+                  "Empty the cache to run this case again.", false];
+    }
+    if (trap.status === "throttled") return ["off", `Rate limited. Try again in ${trap.wait} s.`, false];
+    return ["", trap.answer, false];
+  }
+
+  /* A request that waits out the rate limiter instead of giving up on a 429. Every
+     visitor shares one budget, and a long prompt reserves a lot of it. */
+  async function sendPatiently(question, verdict) {
+    let result = await send(question);
+    for (let attempt = 0; attempt < 4 && result.status === "throttled"; attempt += 1) {
+      verdict.textContent = `Rate limited: waiting ${result.wait} s for the budget to refill...`;
+      await new Promise((resolve) => setTimeout(resolve, (Number(result.wait) || 1) * 1000 + 300));
+      result = await send(question);
+    }
+    return result;
+  }
+
+  async function runCase(c) {
+    const verdict = byId(`case-${c.id}`).querySelector(".verdict");
+    verdict.className = "verdict";
+    verdict.textContent = "Running...";
+    const seed = await sendPatiently(questionOf(c, "a"), verdict);
+    record(labelOf(c, "a"), seed);
+    verdict.textContent = "Running...";
+    const trap = await sendPatiently(questionOf(c, "b"), verdict);
+    record(labelOf(c, "b"), trap);
+    const [kind, text, wrong] = judge(c, trap);
+    verdict.className = `verdict ${kind}`;
+    verdict.textContent = text;
+    refresh();
+    return wrong;
+  }
+
+  async function runAll() {
+    const button = byId("weak-all");
+    const out = byId("weak-summary");
+    button.disabled = true;
+    let wrong = 0;
+    for (const [index, c] of WEAK.cases.entries()) {
+      out.textContent = `Running case ${index + 1} of ${WEAK.cases.length}...`;
+      if (await runCase(c)) wrong += 1;
+    }
+    const traps = WEAK.cases.filter((c) => c.id !== "control").length;
+    out.textContent = chromaState === "ok"
+      ? `${wrong} of ${traps} look-alike questions were served a wrong answer.`
+      : "The semantic cache is off on this server. Run the gateway locally to see these fail.";
+    button.disabled = false;
+  }
+
+  async function loadWeakContext() {
+    try {
+      const groups = await (await fetch("/config")).json();
+      const rows = Object.values(groups).flat();
+      threshold = rows.find((r) => r.setting === "similarity_threshold")?.value ?? null;
+      guard = rows.find((r) => r.setting === "semantic_negation_guard")?.value ?? null;
+      const on = rows.find((r) => r.setting === "semantic_cache_enabled")?.value;
+      byId("weak-state").textContent = on
+        ? `threshold ${threshold}, negation guard ${guard ? "on" : "off"}`
+        : "semantic cache is off on this server";
+    } catch (error) {
+      byId("weak-state").textContent = "complex prompts";
+    }
+  }
+
   /* ---------- rate limit burst ---------- */
 
   /* Fifteen new questions at once. Random words, so none is a repeat or a
@@ -719,6 +945,7 @@
       if (ratioHistory.length > 60) ratioHistory.shift();
       drawRatio();
       const health = await (await fetch("/health")).json();
+      chromaState = health.dependencies.chroma;
       for (const name of ["redis", "chroma"]) {
         const state = health.dependencies[name];
         const chip = byId(`health-${name}`);
@@ -946,6 +1173,9 @@
   byId("fix").addEventListener("click", () => setPrimary(200));
   byId("flush").addEventListener("click", flush);
   byId("burst").addEventListener("click", burst);
+  byId("weak-all").addEventListener("click", runAll);
+  buildCases();
+  loadWeakContext();
 
   const initial = location.hash.slice(1);
   showTab(["benchmark", "configuration"].includes(initial) ? initial : "console");
